@@ -18,7 +18,7 @@ function valueInput(name,label,value="",type="text",required=true) {
   return input(name,label,type,(required?"required ":"")+'value="'+esc(value)+'"');
 }
 function projectLink(name) {
-  return name?'<a class="text-link" href="#board/'+encodeURIComponent(name)+'">Project · '+esc(name)+'</a>':"";
+  return name?'<p>Project · '+esc(name)+'</p>':"";
 }
 function saleTotals(sale) {
   const items=team.sale_items.filter(i=>i.sale===sale.id);

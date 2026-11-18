@@ -156,7 +156,7 @@ def save_record(conn, data, actor, record_id=None):
         details["actual"] = clean_text(data, "actual", 2000, status != "Planned")
     elif kind == "issues":
         details["project"] = clean_text(data, "project", 100)
-        details["next_action"] = clean_text(data, "next_action", 300, status != "Done")
+        details["next_action"] = clean_text(data, "next_action", 300)
     else:
         details["supplier"] = clean_text(data, "supplier", 100)
     if kind in ("builds", "tests", "parts"):

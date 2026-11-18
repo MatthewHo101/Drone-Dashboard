@@ -175,3 +175,5 @@ dialog::backdrop { background: #17251f85; }
 .delivery-totals { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:0 16px; }
 .delivery-totals div { background:var(--surface,#f0f4e9); padding:12px; border-radius:8px; }
 .delivery-totals dd { margin:4px 0 0; font-size:clamp(1.25rem,2vw,2rem); font-weight:700; overflow-wrap:anywhere; }
+
+.task-card { display:grid; gap:6px; padding:8px 0; color:inherit; }

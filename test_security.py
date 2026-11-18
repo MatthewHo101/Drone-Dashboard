@@ -64,6 +64,28 @@ class WorkspaceSecurity(unittest.TestCase):
         request = next(row for row in settings["requests"] if row["name"]==name)
         self.call("/account/approve",{"request_id":request["id"],"password":self.password},admin_cookie)
 
+    def test_task_history_and_documents(self):
+        cookie = self.login()
+        _, task = self.call("/api/records", dict(kind="issues", title="Check frame",
+                            status="Open", owner="owner"), cookie, 201)
+        task_id = task["id"]
+        self.assertEqual(task["details"]["next_action"], "")
+        for text in ("Frame inspected", "Measurements recorded"):
+            update = dict(task=task_id, body=text, author="other", posted_at="yesterday",
+                          request_key=text)
+            for _ in range(2):
+                self.call("/api/team/task-update", update, cookie)
+        self.call("/api/team/task-update", dict(task=task_id, body=" "), cookie, 400)
+        self.call("/api/team/task-update", dict(task=9999, body="Missing task"), cookie, 400)
+        self.call("/api/team/document", dict(task=task_id, filename="notes.txt",
+                  file=base64.b64encode(b"Measurements").decode()), cookie)
+        _, snapshot = self.call("/api/team", cookie=cookie)
+        history = snapshot["task_updates"]
+        self.assertEqual([u["body"] for u in history], ["Measurements recorded", "Frame inspected"])
+        self.assertTrue(all(u["task"] == task_id and u["author"] == "owner"
+                            and u["posted_at"].endswith("Z") for u in history))
+        self.assertEqual(snapshot["documents"][0]["task"], task_id)
+
     def test_quote_to_delivery_and_shared_attachments(self):
         cookie = self.login()
         def post(op, fields, status=200):

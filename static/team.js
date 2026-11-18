@@ -3,8 +3,8 @@ const view = document.querySelector("#view");
 const feedback = document.querySelector("#feedback");
 const stages = ["Open", "In progress", "Blocked", "Done"];
 const orderStages = ["Ordered", "In transit", "Received", "Cancelled"];
-const currencies = ["HKD","USD","EUR","GBP","CNY","AUD","CAD"];
-let workspace, team, project = "", purchaseCategory = "", purchaseProject = "";
+const currencies = ["GBP","HKD","USD","EUR","CNY","AUD","CAD"];
+let workspace, team, purchaseCategory = "", purchaseProject = "";
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const choices = (values, selected) => values.map(value => {
   const [key,label] = Array.isArray(value) ? value : [value,value];
@@ -38,23 +38,41 @@ function calendar(title,day,notes="") {
 function person(name) {
   return Object.hasOwn(workspace.labels,name) ? workspace.labels[name] : name;
 }
+function taskFields(task={details:{}}) {
+  return valueInput("title","Task",task.title)+
+    select("owner","Owner",workspace.users.map(n=>[n,person(n)]),task.owner||workspace.actor)+
+    valueInput("record_date","Due date",task.record_date,"date",false)+
+    valueInput("next_action","Next action (optional)",task.details.next_action,"text",false);
+}
 function board() {
-  const items = tasks();
-  const projects = [...new Set([project,...items.map(t=>t.details.project),...team.charts.map(c=>c.project),...team.meetings.map(m=>m.project)].filter(Boolean))].sort();
-  const filtered = items.filter(t=>!project||project===t.details.project);
-  const fields = input("title","Task")+input("project","Project","text",'maxlength="100"')+
-    select("owner","Owner",workspace.users.map(name=>[name,person(name)]),workspace.actor)+input("record_date","Due date","date","")+
-    input("next_action","Next action");
-  const related = project ? panel("Project resources",team.opportunities.filter(o=>o.project===project).map(o=>'<a class="text-link" href="#commercial/'+o.id+'">'+esc(o.customer)+" · "+esc(o.title)+"</a>").join("")+team.charts.filter(c=>c.project===project).map(c=>diagram(c.edges)+esc(c.title)).join("")+team.meetings.filter(m=>m.project===project).map(m=>'<p>'+esc(m.title)+' · '+esc(m.day)+'</p>').join("")) : "";
-  return related + form("task","Add a task",fields)+'<label class="filter">Project <select id="project">'+
-    choices([["","All projects"],...projects],project)+'</select></label><div class="board">'+stages.map(stage=>
-    panel(stage,filtered.filter(t=>t.status===stage).map(t=>{
-      const docs=team.documents.filter(d=>d.task===t.id);
-      return '<article><a href="/#issues/'+t.id+'"><strong>'+esc(t.title)+'</strong></a><p>'+esc(t.details.next_action)+'</p><small>'+
-        esc([t.details.project,person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small>'+
-        '<label>Move to <select data-task="'+t.id+'">'+choices(stages,stage)+'</select></label>'+
-        docs.map(download).join("")+calendar(t.title,t.record_date,t.details.next_action)+'</article>';
-    }).join("")||"<small>No tasks</small>")).join("")+'</div>';
+  const items=tasks();
+  return form("task","Create task",taskFields())+'<div class="board">'+stages.map(stage=>
+    panel(stage,items.filter(t=>t.status===stage).map(t=>
+      '<article><a class="task-card" href="#task/'+t.id+'"><strong>'+esc(t.title)+'</strong><small>'+
+      esc([person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small></a>'+
+      '<label>Move to <select data-task="'+t.id+'">'+choices(stages,stage)+'</select></label></article>'
+    ).join("")||"<small>No tasks</small>")).join("")+'</div>';
+}
+function taskDetail() {
+  const task=tasks().find(t=>String(t.id)===location.hash.split("/")[1]);
+  const back='<a class="text-link" href="#board">← All tasks</a>';
+  if(!task)return back+'<p class="empty">Task unavailable.</p>';
+  const updates=team.task_updates.filter(u=>u.task===task.id);
+  const docs=team.documents.filter(d=>d.task===task.id);
+  const history=updates.map(u=>'<article><strong>'+esc(person(u.author))+'</strong> · <time datetime="'+esc(u.posted_at)+'">'+
+    esc(new Date(u.posted_at).toLocaleString())+'</time><pre>'+esc(u.body)+'</pre></article>').join("");
+  return back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
+    '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
+    (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
+    form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+select("status","Status",stages,task.status)+
+      '<label>Notes<textarea name="notes" maxlength="2000">'+esc(task.notes)+'</textarea></label>')+
+    calendar(task.title,task.record_date,task.details.next_action)+
+    '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
+    encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+
+    panel("Work history",form("task-update","Add work update",hiddenId("task",task.id)+input("body","What was done?","area",'required maxlength="4000"'))+
+      (history||'<p>No work updates yet.</p>'))+
+    panel("Documents",form("document","Add document",hiddenId("task",task.id)+input("file","Document · up to 5 MiB","file"))+
+      (docs.map(attachment).join("")||'<p>No documents attached.</p>'));
 }
 function download(doc) {
   return '<a class="text-link" href="/downloads/'+doc.id+'">'+esc(doc.name)+' ↓</a>';
@@ -119,10 +137,9 @@ function orders() {
     taskSelect()+input("file","Invoice · up to 5 MiB","file"))+
     select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+select("purchaseProject","Filter by project",[["","All projects"],...new Set(team.orders.map(o=>o.project).filter(Boolean))],purchaseProject)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
-const pages={board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
+const pages={task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
-  const [key,suffix]=location.hash.slice(1).split("/");
-  if(key==="board") {try {project=decodeURIComponent(suffix||"");} catch {project="";}}
+  const [key]=location.hash.slice(1).split("/");
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;
   view.innerHTML='<header class="intro"><h1>'+title+'</h1></header>'+display();
   highlightNavigation();
@@ -149,7 +166,7 @@ view.addEventListener("submit",event=>{
   const form=event.target,op=form.dataset.op;
   perform(form.querySelector("button"),async()=>{
     const data=Object.fromEntries(new FormData(form));
-    if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document"].includes(op)) {
+    if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"].includes(op)) {
       form.dataset.key ||= crypto.randomUUID();
       data.request_key=form.dataset.key;
     }
@@ -164,13 +181,19 @@ view.addEventListener("submit",event=>{
         reader.readAsDataURL(file);
       });
     }
-    if(op==="task") await api("/api/records",{...data,kind:"issues",status:"Open"});
+    if(op==="task") {
+      const saved=await api("/api/records",{...data,kind:"issues",status:"Open"});
+      workspace.records.push(saved);
+      location.hash="#task/"+saved.id;
+    } else if(op==="edit-task") {
+      const task=tasks().find(t=>t.id===Number(data.task));
+      await api("/api/records/"+task.id,{...task,...task.details,...data},"PUT");
+    }
     else await api("/api/team/"+op,data);
   });
 });
 view.addEventListener("change",event=>{
   const control=event.target;
-  if(control.id==="project"){location.hash="#board/"+encodeURIComponent(control.value);return;}
   if(control.name==="categoryFilter"){purchaseCategory=control.value;render();return;}
   if(control.name==="purchaseProject"){purchaseProject=control.value;render();return;}
   if(control.dataset.task){

@@ -17,6 +17,9 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS task_updates(
+ id INTEGER PRIMARY KEY, task INTEGER NOT NULL REFERENCES records(id), author TEXT NOT NULL,
+ posted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS factors(name TEXT PRIMARY KEY REFERENCES users(name), secret TEXT NOT NULL,
  last_step INTEGER DEFAULT -1, attempts INTEGER DEFAULT 0, blocked_until INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, name TEXT REFERENCES users(name), expires INTEGER);
@@ -141,7 +144,7 @@ def handle(handler, conn, path, actor):
     if not path.startswith("/api/team"):
         return False
     if path == "/api/team" and handler.command == "GET":
-        queries = {"orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
+        queries = {"task_updates":"SELECT * FROM task_updates", "orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
                    "charts":"SELECT c.*,p.project FROM charts c LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
         result.update(commercial.snapshot(conn))
@@ -158,20 +161,26 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, 7*1024*1024+4096)
     op = path.rsplit("/",1)[-1]
-    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document"):
+    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"):
         conn.execute("BEGIN IMMEDIATE")
         token = string(data,"request_key",64,True)
         if token:
             if not conn.execute("INSERT OR IGNORE INTO commercial_writes VALUES(?,?,?)",(token,op,actor)).rowcount:
                 handler.json(200,{"saved":True})
                 return True
-        if op!="document":
+        if op not in ("document","task-update"):
             commercial.apply(conn,op,data,actor)
             conn.commit()
             handler.json(200,{"saved":True})
             return True
     if op == "document":
         upload(conn,data)
+    elif op == "task-update":
+        task = data.get("task")
+        if not conn.execute("SELECT 1 FROM records WHERE id=? AND kind='issues'", (task,)).fetchone():
+            raise ValueError("Choose an existing task.")
+        conn.execute("INSERT INTO task_updates(task,author,body) VALUES(?,?,?)",
+                     (task, actor, string(data,"body",4000)))
     elif op == "order":
         quantity = int(string(data,"quantity",6))
         if not 1 <= quantity <= 999999:
