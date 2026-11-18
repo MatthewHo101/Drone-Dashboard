@@ -1,11 +1,28 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Account security · Lysim</title><link rel="stylesheet" href="/style.css"><script defer src="/security.js"></script></head>
-<body><aside class="sidebar"><a class="brand" href="/">Lysim</a><nav><a href="/">Overview</a><a href="/login">Your account</a></nav></aside>
-<main><div class="topbar">Account security</div><div id="workspace">
-<h1>Account security</h1><p id="state"></p><p role="status" id="message"></p>
+<title>Account · Lysim</title><link rel="stylesheet" href="/style.css"><script defer src="/security.js"></script></head>
+<body><aside class="sidebar">
+    <a class="brand" href="/#overview" aria-label="Lysim overview">
+      <span class="brand-mark" aria-hidden="true">⌘</span>
+      <span>Lysim<small>DRONE R&amp;D</small></span>
+    </a>
+    <nav aria-label="Workspace">
+      <a href="/#overview"><span aria-hidden="true">◫</span>Overview</a>
+      <a href="/#builds"><span aria-hidden="true">◇</span>Builds</a>
+      <a href="/#tests"><span aria-hidden="true">⌁</span>Tests</a>
+      <a href="/#issues"><span aria-hidden="true">◎</span>Issues</a>
+      <a href="/#parts"><span aria-hidden="true">▤</span>Parts</a>
+      <a href="/team"><span aria-hidden="true">▦</span>Team workspace</a>
+    <a href="/security" aria-current="page">Account</a></nav>
+    <div id="identity" class="identity"></div>
+  </aside>
+<main><div class="topbar">Engineering workspace <button id="sign-out" class="secondary">Sign out</button></div><div id="workspace">
+<header class="intro"><div><h1>Account</h1><p id="identity-label"></p></div></header><p id="state"></p><p role="status" id="message"></p>
 <form id="controls" class="form-grid" hidden>
 <label class="wide">Your current password<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
+<section class="panel wide" hidden id="approvals"><div class="entries"><h3>Registration requests</h3><label>Pending request <select name="request_id"></select></label>
+<button class="primary" value="approve">Approve request</button> <button class="secondary" value="reject">Reject request</button>
+</div></section>
 <label>Display name<input name="display" maxlength="80" autocomplete="nickname"></label><button class="secondary" value="profile">Save display name</button>
 <section class="panel wide"><div class="panel-head"><h2>Authenticator</h2></div><div class="entries">
 <button type="submit" class="secondary" value="start" id="start">Start setup</button>
@@ -16,9 +33,7 @@
 <div hidden id="recovery"><p>Save these one-time recovery codes in your password manager.</p><pre id="secrets"></pre><button type="button" class="secondary" id="dismiss">I saved the codes</button></div></div></section>
 <button class="secondary" value="logout-all">Sign out all devices</button>
 <section class="panel wide" hidden id="admin"><div class="panel-head"><h2>Administration</h2></div><div class="entries">
-<a href="/login" class="text-link">Add a user from Your account</a>
-<h3>Registration requests</h3><label>Pending request <select name="request_id"></select></label>
-<button class="primary" value="approve">Approve request</button> <button class="secondary" value="reject">Reject request</button>
+
 <label>User <select name="target"></select></label>
 <button class="secondary" value="disable">Disable user</button> <button class="secondary" value="enable">Enable user</button>
 <button class="secondary" value="grant">Grant administrator</button> <button class="secondary" value="demote">Remove administrator role</button>

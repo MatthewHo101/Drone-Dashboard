@@ -27,7 +27,7 @@ docker compose exec fieldbench python app.py add-user founder2
 docker compose exec fieldbench python app.py add-user founder3
 ```
 
-Replace the example usernames with your founders' names. The command prompts each founder for a password. The app listens on the server's loopback interface at port 8080. For remote access, put an HTTPS reverse proxy in front of that port and restrict it to your team's private network or VPN. Use the login page to sign in. Choose Add user there and authenticate as a designated administrator to create another account. Sessions expire after eight hours. Use HTTPS or a localhost SSH tunnel.
+Replace the example usernames with your founders' names. The command prompts each founder for a password. The app listens on the server's loopback interface at port 8080. For remote access, put an HTTPS reverse proxy in front of that port and restrict it to your team's private network or VPN. Use the login page to sign in. Use Register to request access; an administrator reviews requests on the Account page. Sessions expire after eight hours. Use HTTPS or a localhost SSH tunnel.
 
 Open the dashboard through its shared HTTPS address before sharing records. Recipients need private-network access and a workspace account. Share opens a prefilled WhatsApp message for manual sending. It also supports copying the message, with a selectable text fallback for browsers that restrict clipboard access.
 
@@ -67,7 +67,7 @@ Save the meeting date, title, and notes. **Summarize notes** sends the saved tex
 
 ### Account security
 
-From the trusted server console, run `docker compose exec fieldbench python app.py make-admin founder1` with an existing active username. This step applies to upgrades and fresh installations. Visitors can select Register at sign-in to request an account. An administrator reviews pending requests under Account → Account security and can approve or reject each one. Approval grants member access. Existing members can change their display name there using their current password. Usernames remain the stable sign-in and audit identifiers. Members retain their workspace access. Administrators can add users from the login page and manage roles, disable accounts, reset passwords and review recent security events under **Account → Account security**.
+From the trusted server console, run `docker compose exec fieldbench python app.py make-admin founder1` with an existing active username. This step applies to upgrades and fresh installations. Visitors can select Register at sign-in to request an account. An administrator reviews pending requests under Account and can approve or reject each one. Approval grants member access. Existing members can change their display name there using their current password. Usernames remain the stable sign-in and audit identifiers. Members retain their workspace access. Administrators can approve registrations and manage roles, disable accounts, reset passwords and review recent security events under **Account**.
 
 Each founder should enroll an authenticator from Account security, confirm one code, and store the eight displayed single-use recovery codes privately. Existing authenticator users can generate recovery codes there too. Sign-in accepts either an authenticator code or an unused recovery code. Once all active users are enrolled, an administrator can choose **Require 2FA for the workspace**. Future members get enrollment-only access until they confirm setup. Server operators can replace a lost authenticator with `python app.py enable-2fa USER` inside the container; this revokes sessions and recovery codes.
 
@@ -78,3 +78,9 @@ The server database holds workspace records, documents, authenticator configurat
 ### WhatsApp community
 
 Set `WHATSAPP_COMMUNITY_URL` in the untracked Compose .env file to your community's chat.whatsapp.com invite link and recreate the container. Signed-in founders then see a community shortcut. Record sharing still opens WhatsApp for manual sending.
+
+### Replace all accounts with a new administrator
+
+First create a backup using the command above. Run `docker compose exec fieldbench python app.py reset-accounts` from a trusted SSH session. Confirm the reset and enter the temporary admin password at the hidden prompts. This replaces every account and session, invalidates old authenticators and recovery codes, and transfers workspace records to admin. Pending registrations other than admin remain available for review. Documents, invoices, meetings, audit history, and the workspace 2FA policy are preserved.
+
+Sign in as admin with the temporary password, enter the one-time activation code printed in the SSH console, and choose a different password of at least 12 characters. The server issues the first session only after that change succeeds. Review pending requests under Account. If workspace-wide 2FA is required, enroll the new administrator before reviewing requests.

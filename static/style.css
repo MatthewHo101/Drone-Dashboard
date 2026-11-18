@@ -160,3 +160,5 @@ dialog::backdrop { background: #17251f85; }
 .login-card input { width:100%; padding:11px; }
 .login-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .login-card [hidden] { display:none; }
+
+#workspace [hidden], .login-card fieldset[hidden] { display:none; }

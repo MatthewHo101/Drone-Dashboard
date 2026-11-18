@@ -11,6 +11,7 @@ import time
 import team
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS first_login(name TEXT PRIMARY KEY REFERENCES users, activation_hash TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS profiles(name TEXT PRIMARY KEY REFERENCES users, display TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS registrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
  display TEXT NOT NULL, salt BLOB NOT NULL, password_hash BLOB NOT NULL, requested INTEGER NOT NULL);
@@ -28,6 +29,23 @@ CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY, stamp INTEGER, event
 
 def password_hash(password, salt):
     return b"s2:" + hashlib.scrypt(password.encode(), salt=salt, n=32768, r=8, p=3, maxmem=64*1024*1024)
+
+
+def reset_accounts(conn, initial_password):
+    # Caller holds a write transaction. Records keep their last-editor history.
+    activation = secrets.token_urlsafe(24)
+    conn.execute("UPDATE records SET owner=NULL WHERE owner IS NOT NULL")
+    for table in ("sessions","pending","recovery","factors","profiles","admins","disabled","first_login","limits","users"):
+        conn.execute(f"DELETE FROM {table}")
+    salt = secrets.token_bytes(16)
+    conn.execute("INSERT INTO users VALUES(?,?,?)",("admin",salt,password_hash(initial_password,salt)))
+    conn.execute("INSERT INTO admins VALUES('admin')")
+    conn.execute("INSERT INTO profiles VALUES('admin','Administrator')")
+    conn.execute("UPDATE records SET owner='admin' WHERE owner IS NULL")
+    conn.execute("DELETE FROM registrations WHERE name='admin'")
+    conn.execute("INSERT INTO first_login VALUES('admin',?)",(digest(activation),))
+    audit(conn,"Account reset","server console","admin")
+    return activation
 
 
 def verify_password(password, user):

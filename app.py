@@ -277,11 +277,10 @@ class Handler(BaseHTTPRequestHandler):
         password = data.get("password")
         if not isinstance(name, str) or not isinstance(password, str) or len(password) > 128:
             raise ValueError("Check the username and password.")
-        if path in ("/auth/request","/auth/register"):
+        if path == "/auth/request":
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", name) or name != name.strip() or len(password) < 12:
                 raise ValueError("Use a 1–40 character username and a password of 12–128 characters.")
             display = security.display_name(data.get("display",name))
-        if path == "/auth/request":
             conn.execute("BEGIN IMMEDIATE")
             allowed = security.request_registration(conn,security.source(self),name,display,password)
             conn.commit()
@@ -289,22 +288,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(202, {"requested":True})
             else:
                 self.json(429, {"error":"Too many requests. Try again later."})
-            return
-        if path == "/auth/register":
-            conn.execute("BEGIN IMMEDIATE")
-            if not actor or not security.exists(conn,"admins",actor) or not self.active_session(conn):
-                self.json(403, {"error": "Administrator access required."})
-                return
-            try:
-                salt = secrets.token_bytes(16)
-                conn.execute("INSERT INTO users VALUES(?,?,?)",(name,salt,password_hash(password,salt)))
-                conn.execute("INSERT INTO profiles VALUES(?,?)",(name,display))
-                conn.execute("DELETE FROM registrations WHERE name=?",(name,))
-                security.audit(conn,"Account created",actor,name)
-                conn.commit()
-            except sqlite3.IntegrityError:
-                raise ValueError("That username already exists.")
-            self.json(201, {"created": True})
             return
         conn.execute("BEGIN IMMEDIATE")
         user = conn.execute("SELECT * FROM users WHERE name=?", (name,)).fetchone()
@@ -319,6 +302,24 @@ class Handler(BaseHTTPRequestHandler):
             conn.commit()
             self.json(401, {"error": "Check your username and password."})
             return
+        first = conn.execute("SELECT activation_hash FROM first_login WHERE name=?", (name,)).fetchone()
+        if first:
+            if "replacement" not in data:
+                self.json(200, {"must_change":True})
+                return
+            activation = data.get("activation","")
+            if not isinstance(activation,str) or not hmac.compare_digest(first[0],security.digest(activation)):
+                security.failure(conn,keys,now,name)
+                conn.commit()
+                self.json(403, {"error":"Check the activation code printed in your server console."})
+                return
+            replacement = data["replacement"]
+            if not isinstance(replacement,str) or not 12<=len(replacement)<=128 or replacement==password:
+                raise ValueError("Choose a different password of 12–128 characters.")
+            salt = secrets.token_bytes(16)
+            conn.execute("UPDATE users SET salt=?,password_hash=? WHERE name=?",(salt,password_hash(replacement,salt),name))
+            conn.execute("DELETE FROM first_login WHERE name=?",(name,))
+            security.audit(conn,"Initial password changed",name)
         factor = conn.execute("SELECT * FROM factors WHERE name=?", (name,)).fetchone()
         if factor:
             candidate = data.get("code", "")
@@ -378,7 +379,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         self.json(403,{"error":"Enroll your authenticator to access the workspace."})
                     return
-                if self.command == "POST" and path in ("/auth/login", "/auth/register", "/auth/request", "/auth/logout"):
+                if self.command == "POST" and path in ("/auth/login", "/auth/request", "/auth/logout"):
                     self.auth_action(conn, path, actor)
                     return
                 if self.command == "GET" and path == "/auth/status":
@@ -390,6 +391,9 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         self.json(401, {"error": "Sign in to Lysim."})
                         return
+                if actor and self.command=="GET" and path=="/login":
+                    self.send_body(303,b"","text/plain",{"Location":"/" if self.server.demo else "/security"})
+                    return
                 if path.startswith("/account/"):
                     if self.server.demo:
                         raise PermissionError("Use the live workspace to manage security.")
@@ -457,6 +461,7 @@ def main():
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
     serve.add_argument("--demo", action="store_true")
+    sub.add_parser("reset-accounts")
     user = sub.add_parser("add-user")
     user.add_argument("name")
     factor = sub.add_parser("enable-2fa")
@@ -472,7 +477,17 @@ def main():
         global DB_PATH
         DB_PATH = DB_PATH.parent / "demo.sqlite3"
     initialize()
-    if args.command == "add-user":
+    if args.command == "reset-accounts":
+        print("This replaces every account with admin, signs out all devices and transfers record ownership to admin.")
+        if input("Type RESET ACCOUNTS to confirm: ") != "RESET ACCOUNTS":
+            parser.exit(message="Cancelled.\n")
+        password = getpass.getpass("Temporary admin password: ")
+        if not 8 <= len(password) <= 128 or password != getpass.getpass("Confirm temporary password: "):
+            parser.error("Passwords must match and be 8–128 characters.")
+        with database(write=True) as conn:
+            activation = security.reset_accounts(conn,password)
+        print("First-login activation code (keep private):",activation)
+    elif args.command == "add-user":
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", args.name) or args.name != args.name.strip():
             parser.error("Use 1–40 letters, numbers, spaces, dots, dashes, or underscores for the username.")
         password = getpass.getpass("Password (at least 12 characters): ")

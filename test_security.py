@@ -57,6 +57,34 @@ class WorkspaceSecurity(unittest.TestCase):
         self.assertIn(b"HttpOnly",head)
         return head.split(b"Set-Cookie: ")[1].split(b";")[0].decode()
 
+    def approve_new(self, name, admin_cookie):
+        self.call("/auth/request",{"name":name,"password":self.password},status=202)
+        _, settings = self.call("/account/settings",cookie=admin_cookie)
+        request = next(row for row in settings["requests"] if row["name"]==name)
+        self.call("/account/approve",{"request_id":request["id"],"password":self.password},admin_cookie)
+
+    def test_reset_and_first_login(self):
+        old = self.login()
+        self.call("/auth/request",{"name":"visitor","password":self.password},status=202)
+        with app.database(write=True) as conn:
+            app.save_record(conn,dict(kind="builds",title="Build",owner="owner",status="Ready",airframe="A",revision="1"),"owner")
+            activation = security.reset_accounts(conn,"temp-password")
+            self.assertEqual([r[0] for r in conn.execute("SELECT name FROM users")],["admin"])
+            self.assertEqual(conn.execute("SELECT owner FROM records").fetchone()[0],"admin")
+        self.call("/api/workspace",cookie=old,status=401)
+        initial={"name":"admin","password":"temp-password"}
+        head,result=self.call("/auth/login",initial)
+        self.assertTrue(result["must_change"])
+        self.assertNotIn(b"Set-Cookie",head)
+        self.call("/auth/login",dict(initial,activation="wrong",replacement=self.password),status=403)
+        self.call("/auth/login",dict(initial,activation=activation,replacement="temp-password"),status=400)
+        head,_=self.call("/auth/login",dict(initial,activation=activation,replacement=self.password))
+        cookie=head.split(b"Set-Cookie: ")[1].split(b";")[0].decode()
+        _,settings=self.call("/account/settings",cookie=cookie)
+        self.assertTrue(settings["admin"])
+        self.assertEqual(settings["requests"][0]["name"],"visitor")
+        self.call("/auth/login",initial,status=401)
+
     def test_registration_approval_and_profile(self):
         request = {"name":"pilot","display":"Flight lead","password":self.password}
         self.call("/auth/request",request,status=202)
@@ -112,7 +140,7 @@ class WorkspaceSecurity(unittest.TestCase):
         backup = enrolled["codes"][0]
         recovered = self.login(code=backup)
         self.call("/auth/login",dict(auth,name="owner",code=backup),status=403)
-        self.call("/auth/register",dict(auth,name="new"),recovered,201)
+        self.approve_new("new",recovered)
         limited = self.login("new")
         self.call("/api/workspace",cookie=limited,status=403)
         self.call("/downloads/1",cookie=limited,status=403)
@@ -129,9 +157,9 @@ class WorkspaceSecurity(unittest.TestCase):
     def test_admin_and_download_activity(self):
         owner = self.login()
         auth = {"password":self.password,"target":"member"}
-        self.call("/auth/register",{"name":"member","password":self.password},owner,201)
+        self.approve_new("member",owner)
         member = self.login("member")
-        self.call("/auth/register",{"name":"new","password":self.password},member,403)
+        self.call("/auth/register",{"name":"new","password":self.password},member,404)
         self.call("/account/grant",auth,member,403)
         self.call("/downloads/1",status=401)
         with app.database() as conn:

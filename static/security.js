@@ -20,6 +20,9 @@ async function refresh() {
     (info.mandatory ? " Two-factor authentication is required for workspace access." : "");
   byId("start").hidden = info.enrolled;
   byId("codes").hidden = !info.enrolled;
+  byId("identity-label").textContent = info.display;
+  byId("identity").textContent = info.display;
+  byId("approvals").hidden = !info.admin;
   byId("admin").hidden = !info.admin;
   if (info.admin) {
     byId("require").disabled = info.mandatory;
@@ -87,3 +90,11 @@ refresh().catch(error=>message.textContent=error.message);
 window.addEventListener("pageshow", event => {
   if (event.persisted) location.reload();
 });
+
+byId("sign-out").onclick = async () => {
+  try {
+    const response = await fetch("/auth/logout",{method:"POST",headers:{"Content-Type":"application/json","X-Fieldbench":"1"},body:"{}"});
+    if (!response.ok) throw Error("Sign-out failed. Try again.");
+    location.replace("/login");
+  } catch(error){ message.textContent=error.message; }
+};
