@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS factors(name TEXT PRIMARY KEY REFERENCES users(name),
  last_step INTEGER DEFAULT -1, attempts INTEGER DEFAULT 0, blocked_until INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, name TEXT REFERENCES users(name), expires INTEGER);
 CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY, task INTEGER REFERENCES records(id), name TEXT, body BLOB);
+CREATE TABLE IF NOT EXISTS task_update_details(
+ update_id INTEGER PRIMARY KEY REFERENCES task_updates(id), work_date TEXT NOT NULL,
+ document INTEGER UNIQUE REFERENCES documents(id));
 CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, supplier TEXT, invoice TEXT, currency TEXT,
  quantity INTEGER, unit_minor INTEGER, extra_minor INTEGER, document INTEGER REFERENCES documents(id), status TEXT);
 CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, title TEXT, day TEXT, notes TEXT, summary TEXT);
@@ -144,7 +147,8 @@ def handle(handler, conn, path, actor):
     if not path.startswith("/api/team"):
         return False
     if path == "/api/team" and handler.command == "GET":
-        queries = {"task_updates":"SELECT * FROM task_updates", "orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
+        queries = {"task_updates":"""SELECT u.*,d.work_date,d.document FROM task_updates u
+                         LEFT JOIN task_update_details d ON d.update_id=u.id""", "orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
                    "charts":"SELECT c.*,p.project FROM charts c LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
         result.update(commercial.snapshot(conn))
@@ -179,8 +183,13 @@ def handle(handler, conn, path, actor):
         task = data.get("task")
         if not conn.execute("SELECT 1 FROM records WHERE id=? AND kind='issues'", (task,)).fetchone():
             raise ValueError("Choose an existing task.")
-        conn.execute("INSERT INTO task_updates(task,author,body) VALUES(?,?,?)",
-                     (task, actor, string(data,"body",4000)))
+        day = date.fromisoformat(string(data,"work_date",10)) if "work_date" in data else date.today()
+        body = string(data,"body",4000)
+        document = upload(conn,data) if "file" in data else None
+        update = conn.execute("INSERT INTO task_updates(task,author,body) VALUES(?,?,?)",
+                              (task, actor, body))
+        conn.execute("INSERT INTO task_update_details(update_id,work_date,document) VALUES(?,?,?)",
+                     (update.lastrowid,day.isoformat(),document))
     elif op == "order":
         quantity = int(string(data,"quantity",6))
         if not 1 <= quantity <= 999999:

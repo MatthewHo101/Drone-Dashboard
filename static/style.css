@@ -177,3 +177,13 @@ dialog::backdrop { background: #17251f85; }
 .delivery-totals dd { margin:4px 0 0; font-size:clamp(1.25rem,2vw,2rem); font-weight:700; overflow-wrap:anywhere; }
 
 .task-card { display:grid; gap:6px; padding:8px 0; color:inherit; }
+
+.task-detail { display:grid; gap:16px; }
+.task-detail > .text-link { justify-self:start; }
+.task-detail .form-grid { align-items:start; }
+.task-detail .form-grid label { display:grid; margin:0; min-width:0; gap:6px; }
+.task-detail .form-grid :is(input, select, textarea) { width:100%; min-width:0; margin:0; box-sizing:border-box; }
+.task-detail .form-grid label:has(textarea), .task-detail .form-grid button { grid-column:1 / -1; }
+.task-detail .form-grid textarea { min-height:5rem; resize:vertical; }
+.task-detail .form-grid button { justify-self:start; align-self:start; }
+@media (max-width:640px) { .task-detail .form-grid { grid-template-columns:minmax(0,1fr); } }

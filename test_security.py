@@ -86,6 +86,23 @@ class WorkspaceSecurity(unittest.TestCase):
                             and u["posted_at"].endswith("Z") for u in history))
         self.assertEqual(snapshot["documents"][0]["task"], task_id)
 
+    def test_dated_work_update_attachment(self):
+        cookie = self.login()
+        _, task = self.call("/api/records", dict(kind="issues", title="Inspect",
+                            status="Open", owner="owner"), cookie, 201)
+        update = dict(task=task["id"], work_date="2026-11-14", body="Inspected frame",
+                      filename="notes.txt", file="SGVsbG8=", request_key="inspection")
+        for invalid in (dict(work_date="2026-02-31"), dict(file="invalid")):
+            self.call("/api/team/task-update", dict(update, **invalid), cookie, 400)
+        for _ in range(2):
+            self.call("/api/team/task-update", update, cookie)
+        _, snapshot = self.call("/api/team", cookie=cookie)
+        entry, = snapshot["task_updates"]
+        document, = snapshot["documents"]
+        self.assertEqual(entry["work_date"], "2026-11-14")
+        self.assertEqual(entry["document"], document["id"])
+        self.assertEqual(entry["task"], document["task"])
+
     def test_quote_to_delivery_and_shared_attachments(self):
         cookie = self.login()
         def post(op, fields, status=200):

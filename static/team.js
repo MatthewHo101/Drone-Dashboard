@@ -59,9 +59,20 @@ function taskDetail() {
   if(!task)return back+'<p class="empty">Task unavailable.</p>';
   const updates=team.task_updates.filter(u=>u.task===task.id);
   const docs=team.documents.filter(d=>d.task===task.id);
-  const history=updates.map(u=>'<article><strong>'+esc(person(u.author))+'</strong> · <time datetime="'+esc(u.posted_at)+'">'+
-    esc(new Date(u.posted_at).toLocaleString())+'</time><pre>'+esc(u.body)+'</pre></article>').join("");
-  return back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
+  const files=new Map(docs.map(doc=>[doc.id,doc]));
+  const history=updates.map(update=>{
+    const doc=files.get(update.document);
+    files.delete(update.document);
+    const day=update.work_date ? '<p>Work date · <time>'+esc(update.work_date)+'</time></p>' : "";
+    return '<article><strong>'+esc(person(update.author))+'</strong>'+day+
+      '<small>Posted <time datetime="'+esc(update.posted_at)+'">'+esc(new Date(update.posted_at).toLocaleString())+
+      '</time></small><pre>'+esc(update.body)+'</pre>'+(doc?attachment(doc):"")+'</article>';
+  }).join("");
+  const otherFiles=[...files.values()].map(doc=>'<article>Attached to task'+attachment(doc)+'</article>').join("");
+  const updateFields=hiddenId("task",task.id)+valueInput("work_date","Work date",dateNow(),"date")+
+    input("file","Document (optional, up to 5 MiB)","file","")+
+    input("body","What was done?","area",'required maxlength="4000"');
+  return '<div class="task-detail">'+back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
     '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
     (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
     form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+select("status","Status",stages,task.status)+
@@ -69,10 +80,8 @@ function taskDetail() {
     calendar(task.title,task.record_date,task.details.next_action)+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
     encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+
-    panel("Work history",form("task-update","Add work update",hiddenId("task",task.id)+input("body","What was done?","area",'required maxlength="4000"'))+
-      (history||'<p>No work updates yet.</p>'))+
-    panel("Documents",form("document","Add document",hiddenId("task",task.id)+input("file","Document · up to 5 MiB","file"))+
-      (docs.map(attachment).join("")||'<p>No documents attached.</p>'));
+    panel("Work history",form("task-update","Add work update",updateFields)+
+      (history+otherFiles||'<p>No work updates yet.</p>'))+'</div>';
 }
 function download(doc) {
   return '<a class="text-link" href="/downloads/'+doc.id+'">'+esc(doc.name)+' ↓</a>';
@@ -170,6 +179,7 @@ view.addEventListener("submit",event=>{
       form.dataset.key ||= crypto.randomUUID();
       data.request_key=form.dataset.key;
     }
+    if(op==="task-update" && data.file instanceof File && !data.file.name) delete data.file;
     if(data.file instanceof File){
       if(!data.file.size||data.file.size>5*1024*1024) throw Error("Choose a nonempty file up to 5 MiB.");
       const file=data.file;
