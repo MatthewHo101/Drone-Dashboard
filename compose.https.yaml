@@ -1,0 +1,22 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    command:
+      - caddy
+      - reverse-proxy
+      - --from
+      - "${LYSIM_DOMAIN:?Set LYSIM_DOMAIN to your DDNS hostname}"
+      - --to
+      - fieldbench:8080
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    volumes:
+      - lysim-caddy-data:/data
+      - lysim-caddy-config:/config
+    depends_on:
+      - fieldbench
+    restart: unless-stopped
+volumes:
+  lysim-caddy-data:
+  lysim-caddy-config:
