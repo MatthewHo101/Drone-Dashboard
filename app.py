@@ -2,6 +2,7 @@
 import security
 import team
 import argparse
+import threading
 import time
 from http.cookies import SimpleCookie
 from contextlib import closing, contextmanager
@@ -23,7 +24,7 @@ DB_PATH = Path(os.environ.get("FIELDBENCH_DB", ROOT / "data" / "workspace.sqlite
 STATUSES = {
     "builds": ("Design", "Assembly", "Ready", "Retired"),
     "tests": ("Planned", "Passed", "Failed", "Inconclusive"),
-    "issues": ("Open", "In progress", "Blocked", "Done"),
+    "issues": ("Open", "Done"),
     "parts": ("Needed", "Ordered", "Received"),
 }
 SCHEMA = """
@@ -75,6 +76,7 @@ def initialize():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database() as conn:
         conn.executescript(SCHEMA + team.SCHEMA + security.SCHEMA + team.commercial.SCHEMA)
+        conn.execute("UPDATE records SET status='Open' WHERE kind='issues' AND status IN ('In progress','Blocked')")
 
 
 def password_hash(password, salt):
@@ -230,9 +232,9 @@ def seed_demo():
             actual="No dropped telemetry in the recorded session.")
         add("tests", "Post-fix verification", "Planned", "Riley", build_id=kestrel, test_type="Bench",
             record_date=(today + timedelta(days=3)).isoformat(), expected="Recheck telemetry and review position log.")
-        add("issues", "Investigate position drift", "Blocked", "Riley", test_id=test,
+        add("issues", "Investigate position drift", "Open", "Riley", test_id=test,
             record_date=(today + timedelta(days=1)).isoformat(), next_action="Review the recorded session with Morgan.")
-        add("issues", "Update assembly notes", "In progress", "Morgan", build_id=kestrel,
+        add("issues", "Update assembly notes", "Open", "Morgan", build_id=kestrel,
             record_date=(today + timedelta(days=2)).isoformat(), next_action="Document avionics tray and connector changes.")
         add("parts", "Replacement mounting hardware", "Ordered", "Sam", build_id=kestrel,
             record_date=(today + timedelta(days=4)).isoformat(), supplier="Local hardware supplier")
@@ -535,6 +537,7 @@ def main():
                 if not conn.execute("SELECT 1 FROM users").fetchone():
                     print("No accounts yet. Run 'python app.py add-user <name>' before signing in.", flush=True)
         with ThreadingHTTPServer((args.host, args.port), Handler) as server:
+            threading.Thread(target=team.commercial.rate_worker, args=(database,), daemon=True).start()
             server.demo = args.demo
             print(f"Lysim listening at http://{args.host}:{args.port}", flush=True)
             try:

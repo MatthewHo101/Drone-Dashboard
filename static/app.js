@@ -73,7 +73,7 @@ function panel(title, items, empty) {
 
 function overview() {
   const issues = records("issues").filter((record) => record.status !== "Done");
-  const urgent = issues.filter((record) => record.status === "Blocked" || (record.record_date && record.record_date < today()));
+  const urgent = issues.filter((record) => (record.record_date && record.record_date < today()));
   const leadRows = leads => leads.map(o=>'<a class="record-row" href="/team#commercial/'+o.id+'"><span class="row-title"><strong>'+safe(o.customer)+' · '+safe(o.title)+'</strong><small>'+safe(o.action)+' · '+safe(o.due||"No follow-up date")+'</small></span></a>').join("");
   const myIssues = issues.filter(i=>i.owner===state.actor).sort((a,b)=>(a.record_date||"9999").localeCompare(b.record_date||"9999"));
   const mine = state.leads.filter(o=>o.owner===state.actor);
@@ -85,7 +85,7 @@ function overview() {
   const meeting=state.latest_customer_meeting;
   const learning=meeting?'<section class="panel"><div class="panel-head"><h2>Latest customer meeting</h2><a href="/team#meetings">Open meetings ↗</a></div><div class="entries"><strong>'+safe(meeting.customer)+' · '+safe(meeting.title)+'</strong><p>'+safe(meeting.excerpt)+'</p><small>'+safe(meeting.day)+'</small></div></section>':"";
   return '<header class="intro"><h1>Home</h1><a class="primary" href="/team#board">Open Tasks</a></header>' +
-    myWork + '<div class="panel-grid">' + panel("Engineering blockers", urgent, "No blocked or overdue tasks.") +
+    myWork + '<div class="panel-grid">' + panel("Overdue tasks", urgent, "No overdue tasks.") +
     commercial + learning + '</div>';
 }
 

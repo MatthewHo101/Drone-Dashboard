@@ -1,10 +1,16 @@
 """Commercial records in the shared workspace database. Amounts use minor currency units."""
 from datetime import date
+from decimal import Decimal, localcontext, ROUND_HALF_UP
+import json
+import sqlite3
+import time
+from urllib.request import urlopen
 
 CURRENCIES = ("HKD","USD","EUR","GBP","CNY","AUD","CAD")
 PIPELINE = ("Discovery","Qualified","Quoted","Lost")
 FULFILLMENT = ("Confirmed","In progress","Delivered","Cancelled")
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS fx_cache(id INTEGER PRIMARY KEY CHECK(id=1), fetched INTEGER, rate_day TEXT, rates TEXT);
 CREATE TABLE IF NOT EXISTS opportunities(id INTEGER PRIMARY KEY, customer TEXT, title TEXT, owner TEXT,
  stage TEXT, currency TEXT, quote INTEGER, estimate INTEGER, action TEXT, due TEXT, project TEXT);
 CREATE TABLE IF NOT EXISTS sales(id INTEGER PRIMARY KEY, opportunity INTEGER UNIQUE REFERENCES opportunities,
@@ -21,6 +27,70 @@ CREATE TABLE IF NOT EXISTS allocations(id INTEGER PRIMARY KEY, purchase INTEGER 
  sale INTEGER REFERENCES sales, quantity INTEGER, amount INTEGER);
 CREATE TABLE IF NOT EXISTS commercial_writes(token TEXT PRIMARY KEY, operation TEXT, actor TEXT);
 """
+
+
+def refresh_rates(database):
+    now = int(time.time())
+    with database() as conn:
+        cached = conn.execute("SELECT fetched FROM fx_cache WHERE id=1").fetchone()
+    if cached and cached[0] + 86400 > now:
+        return cached[0] + 86400 - now
+    with urlopen("https://api.frankfurter.dev/v1/latest?base=GBP", timeout=15) as response:
+        payload = json.load(response, parse_float=Decimal)
+    day = date.fromisoformat(payload["date"]).isoformat()
+    if payload["base"] != "GBP":
+        raise ValueError("Unexpected rate base")
+    rates = {"GBP":"1"}
+    for currency in CURRENCIES:
+        if currency != "GBP":
+            rate = Decimal(payload["rates"][currency])
+            if not rate.is_finite() or rate <= 0:
+                raise ValueError("Invalid exchange rate")
+            rates[currency] = str(rate)
+    with database(write=True) as conn:
+        conn.execute("INSERT OR REPLACE INTO fx_cache VALUES(1,?,?,?)",(now,day,json.dumps(rates)))
+    return 86400
+
+
+def rate_worker(database):
+    while True:
+        try:
+            delay = refresh_rates(database)
+        except (OSError, ValueError, KeyError, TypeError, ArithmeticError, sqlite3.Error) as error:
+            print(f"Exchange rate refresh failed: {error}", flush=True)
+            delay = 3600
+        time.sleep(delay)
+
+
+def overview(conn, data):
+    revenue = {code:0 for code in CURRENCIES}
+    cost = revenue.copy()
+    delivered = {s["id"]:s["currency"] for s in data["sales"] if s["status"]=="Delivered"}
+    for item in data["sale_items"]:
+        code = delivered.get(item["sale"])
+        if code:
+            revenue[code] += item["quantity"] * item["price"]
+            cost[code] += item["quantity"] * (item["cost"] or 0)
+    for entry in data["sale_entries"]:
+        if entry["sale"] in delivered and entry["kind"]=="charge":
+            cost[delivered[entry["sale"]]] += entry["amount"]
+    for order in data["orders"]:
+        if order["status"] != "Cancelled":
+            cost[order["currency"]] += order["quantity"] * order["unit_minor"] + order["extra_minor"]
+    row = conn.execute("SELECT rate_day,rates FROM fx_cache WHERE id=1").fetchone()
+    rates = json.loads(row["rates"]) if row else {}
+    def convert(amounts, target):
+        with localcontext() as ctx:
+            ctx.prec = 50
+            total = Decimal(amounts[target])
+            for source, amount in amounts.items():
+                if source != target and amount:
+                    if source not in rates or target not in rates:
+                        return None
+                    total += Decimal(amount) * Decimal(rates[target]) / Decimal(rates[source])
+            return str(total.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return {"rate_day":row["rate_day"] if row else None,
+            "totals":{code:{"revenue":convert(revenue,code),"cost":convert(cost,code)} for code in CURRENCIES}}
 
 
 def preview_type(raw):

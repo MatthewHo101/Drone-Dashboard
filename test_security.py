@@ -142,6 +142,21 @@ class WorkspaceSecurity(unittest.TestCase):
         _,snapshot=self.call("/api/team",cookie=cookie)
         self.assertEqual(sum(int(a["amount"]) for a in snapshot["allocations"]),1600)
 
+        self.assertEqual(snapshot["overview"]["totals"]["HKD"], {"revenue":"8000000","cost":"5201600"})
+        self.assertIsNone(snapshot["overview"]["totals"]["GBP"]["cost"])
+        purchase_doc = snapshot["documents"][0]
+        self.assertEqual((purchase_doc["source"], purchase_doc["uploader"]), ("Purchase invoice","owner"))
+        self.assertTrue(purchase_doc["uploaded_at"].endswith("Z"))
+        rates = {code:1 for code in team.commercial.CURRENCIES}
+        rates["HKD"] = 10
+        fixture = json.dumps(dict(base="GBP", date="2026-11-18", rates=rates)).encode()
+        with patch.object(team.commercial,"urlopen",return_value=io.BytesIO(fixture)) as provider:
+            team.commercial.refresh_rates(app.database)
+            team.commercial.refresh_rates(app.database)
+            provider.assert_called_once()
+        _,snapshot=self.call("/api/team",cookie=cookie)
+        self.assertEqual(snapshot["overview"]["totals"]["GBP"], {"revenue":"800000","cost":"520160"})
+
     def test_reset_and_first_login(self):
         old = self.login()
         self.call("/auth/request",{"name":"visitor","password":self.password},status=202)

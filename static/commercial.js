@@ -45,31 +45,13 @@ function leadFields(o={}) {
 }
 function commercialOverview() {
   const linked=new Map(team.sales.filter(s=>s.opportunity).map(s=>[s.opportunity,s]));
-  const open=team.opportunities.filter(o=>o.stage!=="Lost"&&!linked.has(o.id));
-  const summaries=currencies.map(currency=>{
-    const leads=open.filter(o=>o.currency===currency);
-    const sales=team.sales.filter(s=>s.currency===currency&&s.status!=="Cancelled");
-    if(!leads.length&&!sales.length && (currency!==currencies[0] || open.length || team.sales.some(s=>s.status!=="Cancelled")))return "";
-    const pipeline=leads.reduce((s,o)=>s+BigInt(o.quote),0n);
-    const estimated=leads.reduce((s,o)=>s+BigInt(o.quote)-BigInt(o.estimate),0n);
-    let revenue=0n, costs=0n;
-    let profit=0n,deliveredRevenue=0n,balance=0n,unpriced=0;
-    for(const sale of sales){
-      const t=saleTotals(sale);
-      balance+=t.balance>0n?t.balance:0n;
-      if(sale.status==="Delivered"){
-        revenue+=t.revenue;
-        costs+=t.costs;
-        if(t.complete){ profit+=t.profit; deliveredRevenue+=t.revenue; } else unpriced++;
-      }
-    }
-    return panel(currency,'<dl class="delivery-totals"><div><dt>Delivered revenue</dt><dd>'+cash(revenue)+
-      '</dd></div><div><dt>Recorded delivery costs</dt><dd>'+cash(costs)+'</dd></div></dl><dl class="details">'+[
-      ["Open pipeline",cash(pipeline)],["Estimated pipeline costs",cash(pipeline-estimated)],["Estimated pipeline profit",cash(estimated)],
-      ["Gross profit on costed deliveries",cash(profit)],["Gross margin on costed deliveries",margin(profit,deliveredRevenue)],
-      ["Outstanding order balances",cash(balance)],["Deliveries missing item costs",unpriced]
-    ].map(([label,value])=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+value+'</dd></div>').join("")+'</dl>');
-  }).join("");
+  const report=team.overview;
+  const values=report.totals[displayCurrency];
+  const format=value=>value===null?"Rate unavailable":esc(displayCurrency)+" "+cash(value);
+  const summaries='<section class="panel"><div class="panel-head">'+
+    select("displayCurrency","Display currency",currencies,displayCurrency)+'</div><dl class="delivery-totals">'+
+    '<div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl>'+
+    (report.rate_day?'<small class="rate-date">Exchange rates · '+esc(report.rate_day)+'</small>':"")+'</section>';
   const selected=Number(location.hash.split("/")[1]);
   const cards=team.opportunities.filter(o=>!selected||o.id===selected).map(o=>{
     const sale=linked.get(o.id);
@@ -110,7 +92,7 @@ function salePanel(s) {
     '<h3>Order items</h3>'+items+form("item","Add item",itemFields(s))+
     '<h3>Costs and payments</h3>'+entries.map(e=>'<p>'+esc(e.day)+' · '+(e.kind==="charge"?"One-time cost":"Payment")+' · '+esc(e.label)+' · '+money(e.amount)+'</p>').join("")+
     costs+entryForm("charge","Add one-time cost")+entryForm("payment","Record payment")+allocations+
-    '<h3>Photos and documents</h3>'+docs.map(attachment).join("")+form("document","Attach file",saleId+input("file","Photo or order document · up to 5 MiB","file")));
+    '<h3>Photos and documents</h3>'+docs.map(attachment).join("")+form("document","Attach file",hiddenId("origin","sale")+saleId+input("file","Photo or order document · up to 5 MiB","file")));
 }
 function salesPage() {
   const selected=Number(location.hash.split("/")[1]);

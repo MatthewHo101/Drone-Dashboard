@@ -187,3 +187,13 @@ dialog::backdrop { background: #17251f85; }
 .task-detail .form-grid textarea { min-height:5rem; resize:vertical; }
 .task-detail .form-grid button { justify-self:start; align-self:start; }
 @media (max-width:640px) { .task-detail .form-grid { grid-template-columns:minmax(0,1fr); } }
+
+.task-stack,.document-list { display:grid; gap:12px; }
+.task-stack article { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.rate-date { display:block; padding:0 16px 16px; }
+.cal-controls { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+.cal-controls input { margin-left:6px; }
+.cal-scroll { overflow-x:auto; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; min-width:460px; }
+.cal-day { min-height:65px; border:1px solid var(--border); border-radius:6px; padding:5px; }
+.cal-meeting { display:block; width:100%; text-align:left; overflow-wrap:anywhere; border:0; border-radius:4px; padding:4px; margin-top:3px; background:var(--accent); color:var(--dark); }

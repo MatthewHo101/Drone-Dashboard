@@ -1,9 +1,10 @@
 "use strict";
 const view = document.querySelector("#view");
 const feedback = document.querySelector("#feedback");
-const stages = ["Open", "In progress", "Blocked", "Done"];
+const stages = ["Open","Done"];
 const orderStages = ["Ordered", "In transit", "Received", "Cancelled"];
 const currencies = ["GBP","HKD","USD","EUR","CNY","AUD","CAD"];
+let displayCurrency="GBP", meetingMonth=dateNow().slice(0,7);
 let workspace, team, purchaseCategory = "", purchaseProject = "";
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const choices = (values, selected) => values.map(value => {
@@ -46,11 +47,11 @@ function taskFields(task={details:{}}) {
 }
 function board() {
   const items=tasks();
-  return form("task","Create task",taskFields())+'<div class="board">'+stages.map(stage=>
+  return form("task","Create task",taskFields())+'<div class="task-stack">'+stages.map(stage=>
     panel(stage,items.filter(t=>t.status===stage).map(t=>
       '<article><a class="task-card" href="#task/'+t.id+'"><strong>'+esc(t.title)+'</strong><small>'+
       esc([person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small></a>'+
-      '<label>Move to <select data-task="'+t.id+'">'+choices(stages,stage)+'</select></label></article>'
+      (stage==="Open"?'<button class="secondary" data-done="'+t.id+'">Done</button>':"")+'</article>' 
     ).join("")||"<small>No tasks</small>")).join("")+'</div>';
 }
 function taskDetail() {
@@ -93,16 +94,51 @@ function attachment(doc) {
   return '<div class="attachment">'+preview+download(doc)+(order?'<a class="text-link" href="#sales/'+order.id+'">SO-'+order.id+' · '+esc(order.title)+'</a>':"")+'</div>';
 }
 function documents() {
+  const id=location.hash.split("/")[1];
+  if(id){
+    const doc=team.documents.find(d=>String(d.id)===id);
+    const back='<a class="text-link" href="#documents">← Documents</a>';
+    if(!doc)return back+'<p>Document unavailable.</p>';
+    const task=tasks().find(t=>t.id===doc.task);
+    const sale=team.sales.find(s=>s.id===doc.sale);
+    const order=team.orders.find(o=>o.document===doc.id);
+    const source=doc.source||(doc.update_id?"Task work update":order?"Purchase invoice":"Not recorded");
+    const row=(label,value)=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+value+'</dd></div>';
+    return back+panel(doc.name,'<dl class="details">'+row("Uploaded from",esc(source))+
+      row("Uploaded by",doc.uploader?esc(person(doc.uploader)):"Not recorded")+
+      row("Upload time",doc.uploaded_at?esc(new Date(doc.uploaded_at).toLocaleString()):"Not recorded")+
+      row("File size",doc.size.toLocaleString()+" bytes")+
+      (task?row("Task",'<a href="#task/'+task.id+'">'+esc(task.title)+'</a>'):"")+
+      (sale?row("Sales order",'<a href="#sales/'+sale.id+'">'+esc(sale.title)+'</a>'):"")+
+      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+attachment(doc));
+  }
   return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 5 MiB","file"))+
-    team.documents.map(d=>panel(d.name,attachment(d)+'<small>'+esc(tasks().find(t=>t.id===d.task)?.title||"")+'</small>')).join("");
+    '<div class="document-list">'+team.documents.map(d=>'<a class="record-row" href="#documents/'+d.id+'">'+
+      '<strong>'+esc(d.name)+'</strong><span>View details →</span></a>').join("")+'</div>';
+}
+function meetingCalendar(){
+  const [year,month]=meetingMonth.split("-").map(Number);
+  const offset=(new Date(year,month-1,1).getDay()+6)%7;
+  const count=new Date(year,month,0).getDate();
+  const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<strong>'+d+'</strong>');
+  for(let i=0;i<offset;i++)days.push('<div></div>');
+  for(let n=1;n<=count;n++){
+    const day=meetingMonth+"-"+String(n).padStart(2,"0");
+    const meetings=team.meetings.filter(m=>m.day===day);
+    days.push('<div class="cal-day"><time datetime="'+day+'">'+n+'</time>'+
+      meetings.map(m=>'<button class="cal-meeting" data-meeting="'+m.id+'">'+esc(m.title)+'</button>').join("")+'</div>');
+  }
+  return panel("Calendar",'<div class="cal-controls"><button class="secondary" data-month-shift="-1" aria-label="Previous month">←</button>'+
+    input("meetingMonth","Month","month",'value="'+meetingMonth+'"')+
+    '<button class="secondary" data-month-shift="1" aria-label="Next month">→</button></div><div class="cal-scroll"><div class="cal-grid">'+days.join("")+'</div></div>');
 }
 function meetings() {
-  return form("meeting","Add meeting notes",input("project","Engineering project","text",'maxlength="100"')+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
+  return meetingCalendar()+form("meeting","Add meeting notes",input("project","Engineering project","text",'maxlength="100"')+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
     input("notes","Notes or transcript","area",'required maxlength="30000"'))+
-    team.meetings.map(m=>panel(m.title,projectLink(m.project)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
+    team.meetings.map(m=>'<div tabindex="-1" id="meeting-'+m.id+'">'+panel(m.title,projectLink(m.project)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
     '<details><summary>Meeting notes</summary><pre>'+esc(m.notes)+'</pre></details>'+
     (m.summary?'<h3>AI summary</h3><pre>'+esc(m.summary)+'</pre>':'')+
-    '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')).join("");
+    '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("");
 }
 function diagram(source) {
   const edges=source.split(/\r?\n/).map(line=>line.split("->").map(s=>s.trim()));
@@ -199,19 +235,18 @@ view.addEventListener("submit",event=>{
       const task=tasks().find(t=>t.id===Number(data.task));
       await api("/api/records/"+task.id,{...task,...task.details,...data},"PUT");
     }
-    else await api("/api/team/"+op,data);
+    else {
+      await api("/api/team/"+op,data);
+      if(op==="meeting")meetingMonth=data.day.slice(0,7);
+    }
   });
 });
 view.addEventListener("change",event=>{
   const control=event.target;
   if(control.name==="categoryFilter"){purchaseCategory=control.value;render();return;}
   if(control.name==="purchaseProject"){purchaseProject=control.value;render();return;}
-  if(control.dataset.task){
-    const task=tasks().find(t=>t.id===Number(control.dataset.task));
-    const status=control.value;
-    control.value=task.status;
-    perform(control,()=>api("/api/records/"+task.id,{...task,...task.details,status},"PUT"));
-  }
+  if(control.name==="displayCurrency"){displayCurrency=control.value;render();return;}
+  if(control.name==="meetingMonth" && control.value){meetingMonth=control.value;render();return;}
   if(control.dataset.order){
     const id=Number(control.dataset.order),status=control.value;
     control.value=team.orders.find(o=>o.id===id).status;
@@ -219,6 +254,27 @@ view.addEventListener("change",event=>{
   }
 });
 view.addEventListener("click",event=>{
+  const done=event.target.closest("[data-done]");
+  if(done){
+    const task=tasks().find(t=>t.id===Number(done.dataset.done));
+    perform(done,()=>api("/api/records/"+task.id,{...task,...task.details,status:"Done"},"PUT"));
+    return;
+  }
+  const shift=event.target.closest("[data-month-shift]");
+  if(shift){
+    const [year,month]=meetingMonth.split("-").map(Number);
+    const next=new Date(year,month-1+Number(shift.dataset.monthShift),1);
+    meetingMonth=next.getFullYear()+"-"+String(next.getMonth()+1).padStart(2,"0");
+    render();
+    return;
+  }
+  const meeting=event.target.closest("[data-meeting]");
+  if(meeting){
+    const card=document.getElementById("meeting-"+meeting.dataset.meeting);
+    card.querySelector("details").open=true;
+    card.scrollIntoView({block:"start"});
+    card.focus({preventScroll:true});
+  }
   const button=event.target.closest("[data-summary]");
   if(button) perform(button,()=>api("/api/team/summarize",{id:Number(button.dataset.summary)}));
 });

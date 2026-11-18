@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS factors(name TEXT PRIMARY KEY REFERENCES users(name),
  last_step INTEGER DEFAULT -1, attempts INTEGER DEFAULT 0, blocked_until INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, name TEXT REFERENCES users(name), expires INTEGER);
 CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY, task INTEGER REFERENCES records(id), name TEXT, body BLOB);
+CREATE TABLE IF NOT EXISTS upload_info(document INTEGER PRIMARY KEY REFERENCES documents(id), source TEXT NOT NULL,
+ actor TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
 CREATE TABLE IF NOT EXISTS task_update_details(
  update_id INTEGER PRIMARY KEY REFERENCES task_updates(id), work_date TEXT NOT NULL,
  document INTEGER UNIQUE REFERENCES documents(id));
@@ -94,7 +96,7 @@ def money(data, key):
         raise ValueError("Use a nonnegative amount with up to two decimal places.")
 
 
-def upload(conn, data):
+def upload(conn, data, actor, source):
     name = string(data, "filename", 160)
     raw = base64.b64decode(string(data, "file", 7*1024*1024), validate=True)
     if not 0 < len(raw) <= LIMIT:
@@ -103,6 +105,7 @@ def upload(conn, data):
     if task and not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?", (task,)).fetchone():
         raise ValueError("Choose an existing task.")
     doc_id = conn.execute("INSERT INTO documents(task,name,body) VALUES(?,?,?)", (task or None,name,raw)).lastrowid
+    conn.execute("INSERT INTO upload_info(document,source,actor) VALUES(?,?,?)",(doc_id,source,actor))
     if data.get("sale"):
         sale = commercial.require_row(conn,"sales",data["sale"])
         conn.execute("INSERT INTO sale_docs VALUES(?,?)",(doc_id,sale["id"]))
@@ -153,7 +156,14 @@ def handle(handler, conn, path, actor):
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
         result.update(commercial.snapshot(conn))
         result["documents"] = []
-        for row in conn.execute("SELECT d.id,d.task,d.name,l.sale,substr(d.body,1,8) AS signature FROM documents d LEFT JOIN sale_docs l ON l.document=d.id ORDER BY d.id DESC"):
+        result["overview"] = commercial.overview(conn,result)
+        for row in conn.execute("""SELECT d.id,d.task,d.name,l.sale,length(d.body) AS size,
+                 substr(d.body,1,8) AS signature,i.source,coalesce(i.actor,u.author) AS uploader,
+                 coalesce(i.uploaded_at,u.posted_at) AS uploaded_at,x.update_id
+                 FROM documents d LEFT JOIN sale_docs l ON l.document=d.id
+                 LEFT JOIN upload_info i ON i.document=d.id
+                 LEFT JOIN task_update_details x ON x.document=d.id LEFT JOIN task_updates u ON u.id=x.update_id
+                 ORDER BY d.id DESC"""):
             doc = dict(row)
             doc["preview"] = commercial.preview_type(doc.pop("signature"))
             result["documents"].append(doc)
@@ -178,14 +188,15 @@ def handle(handler, conn, path, actor):
             handler.json(200,{"saved":True})
             return True
     if op == "document":
-        upload(conn,data)
+        source = "Sales order" if data.get("origin")=="sale" and data.get("sale") else "Documents"
+        upload(conn,data,actor,source)
     elif op == "task-update":
         task = data.get("task")
         if not conn.execute("SELECT 1 FROM records WHERE id=? AND kind='issues'", (task,)).fetchone():
             raise ValueError("Choose an existing task.")
         day = date.fromisoformat(string(data,"work_date",10)) if "work_date" in data else date.today()
         body = string(data,"body",4000)
-        document = upload(conn,data) if "file" in data else None
+        document = upload(conn,data,actor,"Task work update") if "file" in data else None
         update = conn.execute("INSERT INTO task_updates(task,author,body) VALUES(?,?,?)",
                               (task, actor, body))
         conn.execute("INSERT INTO task_update_details(update_id,work_date,document) VALUES(?,?,?)",
@@ -197,7 +208,7 @@ def handle(handler, conn, path, actor):
         currency = string(data,"currency",3)
         if currency not in ("HKD","USD","EUR","GBP","CNY","AUD","CAD"):
             raise ValueError("Choose a supported currency.")
-        doc = upload(conn,data)
+        doc = upload(conn,data,actor,"Purchase invoice")
         purchase = conn.execute("INSERT INTO orders(supplier,invoice,currency,quantity,unit_minor,extra_minor,document,status) VALUES(?,?,?,?,?,?,?,?)",
             (string(data,"supplier"),string(data,"invoice"),currency,quantity,money(data,"unit"),money(data,"extras"),doc,STAGES[0]))
         category = commercial.enum(data.get("category","General"),("R&D","Commercial","General"))
