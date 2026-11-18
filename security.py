@@ -11,6 +11,10 @@ import time
 import team
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS profiles(name TEXT PRIMARY KEY REFERENCES users, display TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS registrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
+ display TEXT NOT NULL, salt BLOB NOT NULL, password_hash BLOB NOT NULL, requested INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS registration_limits(peer TEXT PRIMARY KEY, count INTEGER, expires INTEGER);
 CREATE TABLE IF NOT EXISTS admins(name TEXT PRIMARY KEY REFERENCES users);
 CREATE TABLE IF NOT EXISTS disabled(name TEXT PRIMARY KEY REFERENCES users);
 CREATE TABLE IF NOT EXISTS pending(name TEXT PRIMARY KEY REFERENCES users, token TEXT, secret TEXT, expires INTEGER);
@@ -96,13 +100,40 @@ def new_codes(conn, actor):
     return codes
 
 
+def display_name(value):
+    if not isinstance(value,str) or not 1 <= len(value.strip()) <= 80 or not value.strip().isprintable():
+        raise ValueError("Enter a display name of 1–80 printable characters.")
+    return value.strip()
+
+
+def label(conn, name):
+    row = conn.execute("SELECT display FROM profiles WHERE name=?", (name,)).fetchone()
+    return row[0] if row else name
+
+
+def request_registration(conn, peer, name, display, password):
+    now = int(time.time())
+    conn.execute("DELETE FROM registration_limits WHERE expires<=?", (now,))
+    conn.execute("INSERT INTO registration_limits VALUES(?,1,?) ON CONFLICT(peer) DO UPDATE SET count=count+1",
+                 (peer,now+3600))
+    count = conn.execute("SELECT count FROM registration_limits WHERE peer=?", (peer,)).fetchone()[0]
+    if count > 8:
+        return False
+    if not exists(conn,"users",name):
+        salt = secrets.token_bytes(16)
+        conn.execute("INSERT OR IGNORE INTO registrations(name,display,salt,password_hash,requested) VALUES(?,?,?,?,?)",
+                     (name,display,salt,password_hash(password,salt),now))
+    return True
+
+
 def settings(conn, actor):
     admin = exists(conn,"admins",actor) and (not mandatory(conn) or exists(conn,"factors",actor))
-    result = {"admin":admin,"enrolled":exists(conn,"factors",actor),"mandatory":mandatory(conn)}
+    result = {"display":label(conn,actor),"admin":admin,"enrolled":exists(conn,"factors",actor),"mandatory":mandatory(conn)}
     if admin:
+        result["requests"] = [dict(r) for r in conn.execute("SELECT id,name,display,requested FROM registrations ORDER BY requested,id")]
         result["users"] = [dict(r) for r in conn.execute("""
-            SELECT u.name, a.name IS NOT NULL AS admin, d.name IS NOT NULL AS disabled,
-            f.name IS NOT NULL AS enrolled FROM users u LEFT JOIN admins a USING(name)
+            SELECT u.name, coalesce(p.display,u.name) AS display, a.name IS NOT NULL AS admin, d.name IS NOT NULL AS disabled,
+            f.name IS NOT NULL AS enrolled FROM users u LEFT JOIN profiles p USING(name) LEFT JOIN admins a USING(name)
             LEFT JOIN disabled d USING(name) LEFT JOIN factors f USING(name) ORDER BY u.name""")]
         result["events"] = [dict(r) for r in conn.execute("SELECT * FROM activity ORDER BY id DESC LIMIT 100")]
     return result
@@ -114,6 +145,10 @@ def manage(conn, actor, token, op, data):
     if not isinstance(password,str) or len(password)>128 or not verify_password(password,user):
         raise ValueError("Enter your current password.")
     now = int(time.time())
+    if op == "profile":
+        display = display_name(data.get("display"))
+        conn.execute("INSERT OR REPLACE INTO profiles VALUES(?,?)",(actor,display))
+        return {}
     if op == "logout-all":
         conn.execute("DELETE FROM sessions WHERE name=?", (actor,))
         audit(conn,"All sessions revoked",actor)
@@ -142,6 +177,18 @@ def manage(conn, actor, token, op, data):
         return {"codes":new_codes(conn,actor)}
     if not exists(conn,"admins",actor):
         raise PermissionError("Administrator access required.")
+    if op in ("approve","reject"):
+        row = conn.execute("SELECT * FROM registrations WHERE id=?", (data.get("request_id"),)).fetchone()
+        if not row:
+            raise ValueError("This request has already been processed. Refresh the page.")
+        if op == "approve":
+            if exists(conn,"users",row["name"]):
+                raise ValueError("This username now has an account. Reject this request.")
+            conn.execute("INSERT INTO users VALUES(?,?,?)",(row["name"],row["salt"],row["password_hash"]))
+            conn.execute("INSERT INTO profiles VALUES(?,?)",(row["name"],row["display"]))
+        conn.execute("DELETE FROM registrations WHERE id=?",(row["id"],))
+        audit(conn,"Registration approved" if op=="approve" else "Registration rejected",actor,row["name"])
+        return {}
     if op == "require":
         if conn.execute("SELECT 1 FROM users WHERE name NOT IN (SELECT name FROM disabled) AND name NOT IN (SELECT name FROM factors)").fetchone():
             raise ValueError("Enroll all active users before requiring two-factor authentication.")

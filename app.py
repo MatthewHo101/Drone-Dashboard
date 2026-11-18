@@ -277,16 +277,29 @@ class Handler(BaseHTTPRequestHandler):
         password = data.get("password")
         if not isinstance(name, str) or not isinstance(password, str) or len(password) > 128:
             raise ValueError("Check the username and password.")
+        if path in ("/auth/request","/auth/register"):
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", name) or name != name.strip() or len(password) < 12:
+                raise ValueError("Use a 1–40 character username and a password of 12–128 characters.")
+            display = security.display_name(data.get("display",name))
+        if path == "/auth/request":
+            conn.execute("BEGIN IMMEDIATE")
+            allowed = security.request_registration(conn,security.source(self),name,display,password)
+            conn.commit()
+            if allowed:
+                self.json(202, {"requested":True})
+            else:
+                self.json(429, {"error":"Too many requests. Try again later."})
+            return
         if path == "/auth/register":
             conn.execute("BEGIN IMMEDIATE")
             if not actor or not security.exists(conn,"admins",actor) or not self.active_session(conn):
                 self.json(403, {"error": "Administrator access required."})
                 return
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", name) or name != name.strip() or len(password) < 12:
-                raise ValueError("Use a 1–40 character username and a password of 12–128 characters.")
             try:
                 salt = secrets.token_bytes(16)
                 conn.execute("INSERT INTO users VALUES(?,?,?)",(name,salt,password_hash(password,salt)))
+                conn.execute("INSERT INTO profiles VALUES(?,?)",(name,display))
+                conn.execute("DELETE FROM registrations WHERE name=?",(name,))
                 security.audit(conn,"Account created",actor,name)
                 conn.commit()
             except sqlite3.IntegrityError:
@@ -365,11 +378,11 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         self.json(403,{"error":"Enroll your authenticator to access the workspace."})
                     return
-                if self.command == "POST" and path in ("/auth/login", "/auth/register", "/auth/logout"):
+                if self.command == "POST" and path in ("/auth/login", "/auth/register", "/auth/request", "/auth/logout"):
                     self.auth_action(conn, path, actor)
                     return
                 if self.command == "GET" and path == "/auth/status":
-                    self.json(200, {"actor":actor,"demo":self.server.demo,"admin":bool(actor and security.exists(conn,"admins",actor)),"enroll":limited})
+                    self.json(200, {"actor":actor,"display":security.label(conn,actor),"demo":self.server.demo,"admin":bool(actor and security.exists(conn,"admins",actor)),"enroll":limited})
                     return
                 if not actor and path not in ("/login", "/login.js", "/style.css"):
                     if self.command == "GET" and path in ("/", "/team", "/security"):
@@ -402,7 +415,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.command == "GET" and path == "/api/workspace":
                     records = [as_record(row) for row in conn.execute("SELECT * FROM records ORDER BY id DESC")]
                     users = [row["name"] for row in conn.execute("SELECT name FROM users ORDER BY name")]
-                    self.json(200, {"records": records, "users": users, "actor": actor, "demo": self.server.demo})
+                    self.json(200, {"records": records, "users": users, "labels": dict(conn.execute("SELECT name,display FROM profiles")), "actor": actor, "demo": self.server.demo})
                     return
             entry = re.fullmatch(r"/api/records/([1-9][0-9]{0,17})", path)
             if (self.command == "POST" and path == "/api/records") or (self.command == "PUT" and entry):

@@ -9,10 +9,11 @@
 <label id="factor" hidden>Authenticator or recovery code<input name="code" autocomplete="one-time-code" maxlength="20"></label>
 <button class="primary">Sign in</button></form>
 <form id="create" hidden><label>New username<input name="name" required maxlength="40" autocomplete="off"></label>
+<label>Display name<input name="display" required maxlength="80" autocomplete="nickname"></label>
 <label>New password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>
-<label>Confirm password<input name="confirmation" type="password" required autocomplete="new-password"></label><button class="primary">Create account</button></form>
+<label>Confirm password<input name="confirmation" type="password" required autocomplete="new-password"></label><button class="primary" id="submit-create">Request access</button></form>
 <p id="message" role="status"></p>
-<div class="login-actions"><button class="secondary" id="add">Add user</button><button class="secondary" id="logout" hidden>Sign out</button>
+<div class="login-actions"><button class="secondary" id="add">Register</button><button class="secondary" id="logout" hidden>Sign out</button>
 <a class="secondary" id="security" href="/security" hidden>Account security</a>
 <a class="secondary" id="open" href="/" hidden>Open workspace</a></div>
 </main></body></html>

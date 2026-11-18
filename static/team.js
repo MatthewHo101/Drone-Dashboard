@@ -35,19 +35,22 @@ function calendar(title,day,notes="") {
   const query = new URLSearchParams({action:"TEMPLATE",text:title,dates,details:notes});
   return '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://calendar.google.com/calendar/render?'+esc(query)+'">Add to Google Calendar ↗</a>';
 }
+function person(name) {
+  return Object.hasOwn(workspace.labels,name) ? workspace.labels[name] : name;
+}
 function board() {
   const items = tasks();
   const projects = [...new Set(items.map(t=>t.details.project).filter(Boolean))].sort();
   const filtered = items.filter(t=>!project||project===t.details.project);
   const fields = input("title","Task")+input("project","Project","text",'maxlength="100"')+
-    select("owner","Owner",workspace.users,workspace.actor)+input("record_date","Due date","date","")+
+    select("owner","Owner",workspace.users.map(name=>[name,person(name)]),workspace.actor)+input("record_date","Due date","date","")+
     input("next_action","Next action");
   return form("task","Add a task",fields)+'<label class="filter">Project <select id="project">'+
     choices([["","All projects"],...projects],project)+'</select></label><div class="board">'+stages.map(stage=>
     panel(stage,filtered.filter(t=>t.status===stage).map(t=>{
       const docs=team.documents.filter(d=>d.task===t.id);
       return '<article><a href="/#issues/'+t.id+'"><strong>'+esc(t.title)+'</strong></a><p>'+esc(t.details.next_action)+'</p><small>'+
-        esc([t.details.project,t.owner,t.record_date].filter(Boolean).join(" · "))+'</small>'+
+        esc([t.details.project,person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small>'+
         '<label>Move to <select data-task="'+t.id+'">'+choices(stages,stage)+'</select></label>'+
         docs.map(download).join("")+calendar(t.title,t.record_date,t.details.next_action)+'</article>';
     }).join("")||"<small>No tasks</small>")).join("")+'</div>';

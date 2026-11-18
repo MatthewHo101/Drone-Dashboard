@@ -57,6 +57,32 @@ class WorkspaceSecurity(unittest.TestCase):
         self.assertIn(b"HttpOnly",head)
         return head.split(b"Set-Cookie: ")[1].split(b";")[0].decode()
 
+    def test_registration_approval_and_profile(self):
+        request = {"name":"pilot","display":"Flight lead","password":self.password}
+        self.call("/auth/request",request,status=202)
+        self.call("/auth/request",dict(request,display="Replacement"),status=202)
+        self.call("/auth/login",request,status=401)
+        owner = self.login()
+        _, settings = self.call("/account/settings",cookie=owner)
+        pending = settings["requests"]
+        self.assertEqual(len(pending),1)
+        self.assertEqual(pending[0]["display"],"Flight lead")
+        self.assertNotIn("password_hash",pending[0])
+        approval = {"request_id":pending[0]["id"],"password":self.password}
+        self.call("/account/approve",approval,owner)
+        self.call("/account/approve",approval,owner,status=400)
+        pilot = self.login("pilot")
+        self.call("/account/profile",{"display":"Pilot One","password":self.password},pilot)
+        _, state = self.call("/api/workspace",cookie=pilot)
+        self.assertEqual(state["labels"]["pilot"],"Pilot One")
+        self.assertEqual(state["actor"],"pilot")
+        self.call("/auth/request",dict(request,name="visitor"),status=202)
+        _, settings = self.call("/account/settings",cookie=owner)
+        approval["request_id"] = settings["requests"][0]["id"]
+        self.call("/account/approve",approval,pilot,status=403)
+        self.call("/account/reject",approval,owner)
+        self.call("/auth/login",dict(request,name="visitor"),status=401)
+
     def test_migration_and_limits(self):
         salt = secrets.token_bytes(16)
         legacy = hashlib.scrypt(self.password.encode(),salt=salt,n=16384,r=8,p=1)

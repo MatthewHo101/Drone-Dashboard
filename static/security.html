@@ -6,6 +6,7 @@
 <h1>Account security</h1><p id="state"></p><p role="status" id="message"></p>
 <form id="controls" class="form-grid" hidden>
 <label class="wide">Your current password<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
+<label>Display name<input name="display" maxlength="80" autocomplete="nickname"></label><button class="secondary" value="profile">Save display name</button>
 <section class="panel wide"><div class="panel-head"><h2>Authenticator</h2></div><div class="entries">
 <button type="submit" class="secondary" value="start" id="start">Start setup</button>
 <div hidden id="setup"><p>Enter this key in an authenticator app using a six-digit, time-based account named Lysim.</p><pre id="key"></pre>
@@ -16,6 +17,8 @@
 <button class="secondary" value="logout-all">Sign out all devices</button>
 <section class="panel wide" hidden id="admin"><div class="panel-head"><h2>Administration</h2></div><div class="entries">
 <a href="/login" class="text-link">Add a user from Your account</a>
+<h3>Registration requests</h3><label>Pending request <select name="request_id"></select></label>
+<button class="primary" value="approve">Approve request</button> <button class="secondary" value="reject">Reject request</button>
 <label>User <select name="target"></select></label>
 <button class="secondary" value="disable">Disable user</button> <button class="secondary" value="enable">Enable user</button>
 <button class="secondary" value="grant">Grant administrator</button> <button class="secondary" value="demote">Remove administrator role</button>

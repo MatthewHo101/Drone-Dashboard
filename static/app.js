@@ -60,6 +60,10 @@ function buildLabel(record) {
   return record ? record.details.airframe + " · " + record.details.revision : "";
 }
 
+function person(name) {
+  return Object.hasOwn(state.labels, name) ? state.labels[name] : name;
+}
+
 function rowHint(record) {
   if (record.kind === "builds") return buildLabel(record);
   if (record.kind === "tests") return [record.details.test_type, buildLabel(getRecord(record.build_id))].join(" · ");
@@ -73,7 +77,7 @@ function list(items, empty, columns = false) {
   return heading + items.map((record) => (
     '<a class="record-row ' + (columns ? "columns" : "") + '" href="' + recordLink(record) + '">' +
     '<span class="row-title"><strong>' + safe(record.title) + '</strong><small>' + safe(rowHint(record)) + '</small></span>' +
-    (columns ? '<span class="row-owner">' + safe(record.owner) + '</span><span class="row-date">' + safe(formatDate(record.record_date)) + '</span>' : "") +
+    (columns ? '<span class="row-owner">' + safe(person(record.owner)) + '</span><span class="row-date">' + safe(formatDate(record.record_date)) + '</span>' : "") +
     badge(record.status) + '<span class="chevron" aria-hidden="true">›</span></a>'
   )).join("");
 }
@@ -144,7 +148,7 @@ function formFields(kind, record) {
   let fields =
     field("title", "Title", record.title, { required: true, wide: true }) +
     field("status", "Status", record.status, { choices: config.statuses, required: true }) +
-    field("owner", "Owner", record.owner || state.actor, { choices: state.users, required: true }) +
+    field("owner", "Owner", record.owner || state.actor, { choices: state.users.map(name => [name,person(name)]), required: true }) +
     field("record_date", config.date, record.record_date ?? (kind === "tests" ? today() : ""), { type: "date", required: kind === "tests" });
   if (kind !== "builds") {
     fields += field("build_id", "Build revision", record.build_id, { choices: buildChoices, required: kind === "tests" });
@@ -239,14 +243,14 @@ function detail(record) {
     record.kind === "builds" && candidate.build_id === record.id ||
     record.kind === "tests" && candidate.test_id === record.id);
   showDialog(record.title,
-    '<dl class="details">' + item("Status", badge(record.status)) + item("Owner", safe(record.owner)) +
+    '<dl class="details">' + item("Status", badge(record.status)) + item("Owner", safe(person(record.owner))) +
     item(config.date, record.record_date ? safe(formatDate(record.record_date)) : "") +
     item("Build", linked(build, build ? build.title + " · " + buildLabel(build) : "")) + item("Test", linked(test)) +
     Object.entries(labels).map(([key, label]) => item(label, safe(record.details[key]))).join("") +
     item("Notes", safe(record.notes)) +
     item("Reference", record.details.link ?
       '<a href="' + safe(record.details.link) + '" target="_blank" rel="noopener noreferrer">Open reference ↗</a>' : "") +
-    item("Last updated by", safe(record.updated_by)) + '</dl>' +
+    item("Last updated by", safe(person(record.updated_by))) + '</dl>' +
     (children.length ? '<section class="related"><h3>Linked records</h3>' + list(children, "") + '</section>' : "") +
     '<div class="dialog-actions"><button class="secondary" data-share="' + record.id + '">Share</button>' +
     (record.kind === "tests" ? '<button class="secondary" data-followup="' + record.id + '">Create follow-up issue</button>' : "") +
@@ -256,7 +260,7 @@ function detail(record) {
 
 function shareRecord(record) {
   const url = new URL(recordLink(record), location.href).href;
-  const text = record.title + " [" + record.status + "]\nOwner: " + record.owner + "\n" + url;
+  const text = record.title + " [" + record.status + "]\nOwner: " + person(record.owner) + "\n" + url;
   showDialog("Share record",
     '<label class="share-label">Message<textarea id="share-text" readonly>' + safe(text) + '</textarea></label>' +
     '<p class="share-note">Recipients need access to this workspace to open the link.</p>' +
@@ -361,7 +365,7 @@ window.addEventListener("hashchange", () => { if (state) render(); });
 request("/api/workspace").then((data) => {
   state = data;
   document.querySelector("#identity").innerHTML = '<span class="avatar" aria-hidden="true">' +
-    safe(state.actor.slice(0, 1).toUpperCase()) + '</span><span><strong>' + safe(state.actor) +
+    safe(person(state.actor).slice(0, 1).toUpperCase()) + '</span><span><strong>' + safe(person(state.actor)) +
     '</strong><small>Founder</small></span>';
   document.querySelector("#environment").textContent = state.demo ? "Demo workspace" : "Private workspace";
   render();
