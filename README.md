@@ -50,5 +50,25 @@ Check that you can sign in and see your records at port 8081. The snapshot conta
 
 ## Scope
 
-All signed-in founders can view and edit records. The app records the last editor, links tests to their build revision, and preserves a revision's configuration once it has tests. This prototype stores reference links for CAD, logs, photos, and order documents. Offline editing, automated WhatsApp messaging, uploads, and purchasing integrations are outside the prototype.
+All signed-in founders can view and edit records. The app records the last editor, links tests to their build revision, and preserves a revision's configuration once it has tests. This prototype stores reference links for CAD, logs, photos, and order documents. The team workspace also supports file uploads and invoice-backed order tracking.
 
+
+## Team workspace
+
+Choose **Team workspace** in the sidebar. Use the project board to assign tasks to founders, group them by project, set due dates, and move cards through four stages. Existing issues appear on this board. Dated tasks and meetings offer **Add to Google Calendar**. Google opens a prefilled all-day event for the founder to review and save. Later dashboard edits require a corresponding calendar edit.
+
+Upload documents or invoices up to 5 MiB each. Choose a task during upload to show the file on its card. Documents and invoices are stored in the SQLite database and included in its backup. For an order, enter the invoice reference, currency, quantity, unit price, tax and shipping. For a mixed-item invoice, use quantity one and its pre-tax subtotal as the unit price. Fieldbench calculates the total and sums active orders separately by currency. Invoice values are entered manually. Cancelled orders stay in the history.
+
+Create flowcharts by entering one directed connection per line such as `Design -> Review` and `Review -> Test`. Reuse a node name to create a branch or cycle.
+
+### Meeting summaries
+
+Save the meeting date, title, and notes. **Summarize notes** sends the saved text to your configured Ollama server and saves its response alongside the original. Set `OLLAMA_URL` to the service address reachable from the app and `OLLAMA_MODEL` to an installed model. Pull that model on the Ollama host first (for example, `ollama pull llama3.2`). For Compose, put both settings in an untracked `.env` file beside compose.yaml and run `docker compose up -d --build`. The default container endpoint is the Ubuntu host gateway on port 11434. Ollama must listen on an interface reachable from the container. Keep that endpoint on your private network. Notes remain saved if generation fails.
+
+### Authenticator sign-in
+
+Serve Fieldbench over HTTPS. After creating each founder account, run `docker compose exec fieldbench python app.py enable-2fa founder1`, substituting their username. The founder enters the printed setup key into their authenticator, then confirms a six-digit code. Repeat for every founder. Existing accounts keep password-only access until enrolled. After enrollment, a correct password and authenticator code unlock an eight-hour browser session. Five wrong codes temporarily block verification. To replace a lost authenticator, an administrator with server access can run the same command again. Protect database backups because they contain authenticator keys and uploaded documents.
+
+### WhatsApp community
+
+Set `WHATSAPP_COMMUNITY_URL` in the untracked Compose .env file to your community's chat.whatsapp.com invite link and recreate the container. Signed-in founders then see a community shortcut. Record sharing still opens WhatsApp for manual sending.

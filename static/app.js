@@ -160,7 +160,7 @@ function formFields(kind, record) {
       field("actual", "Actual result", details.actual, { type: "textarea", max: 2000, wide: true });
   }
   if (kind === "issues") {
-    fields += field("test_id", "Linked test", record.test_id, {
+    fields += field("project", "Project", details.project, { max: 100 }) + field("test_id", "Linked test", record.test_id, {
       choices: ["", ...records("tests").map((test) => [test.id, test.title + " · " + buildLabel(getRecord(test.build_id))])],
     }) + field("next_action", "Next action", details.next_action, { max: 300, wide: true });
   } else {
@@ -233,7 +233,7 @@ function detail(record) {
   const labels = {
     airframe: "Airframe ID", revision: "Revision", firmware: "Firmware",
     test_type: "Test type", expected: "Objective and expected result", actual: "Actual result",
-    next_action: "Next action", supplier: "Supplier",
+    project: "Project", next_action: "Next action", supplier: "Supplier",
   };
   const children = state.records.filter((candidate) =>
     record.kind === "builds" && candidate.build_id === record.id ||

@@ -129,3 +129,23 @@ dialog::backdrop { background: #17251f85; }
   .form-grid { grid-template-columns: 1fr; }
 }
 
+
+/* Team planning and purchasing */
+.entry, #view > .panel, #view > .filter { margin-bottom: 16px; }
+.entry > summary { padding: 16px; font-weight: 700; cursor: pointer; }
+.entries { padding: 16px; overflow-wrap: anywhere; }
+.entries article + article { margin-top: 15px; border-top: 1px solid var(--border); padding-top: 15px; }
+.entries p, .entries small, .entries label, .entries .text-link { display: block; margin: 7px 0; }
+.entries label, .entries small { font-size: 13px; color: var(--muted); }
+.entries select { margin-left: 5px; max-width: 100%; }
+.entries details { margin: 12px 0; }
+.entries pre { white-space: pre-wrap; font: inherit; line-height: 1.5; }
+.text-link { font-size: 13px; color: #345c35; text-decoration: underline; }
+.board { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(210px,100%),1fr)); gap: 12px; align-items: start; }
+#feedback:not(:empty) { padding: 10px; border-left: 3px solid #849e61; margin-bottom: 16px; }
+.diagram { overflow: auto; }
+.diagram svg { min-width: 460px; width: 100%; max-height: 500px; }
+.diagram path { fill: none; stroke: #526c52; stroke-width: 2; }
+.diagram rect { fill: #eef5e3; stroke: #7d9974; }
+.diagram text { text-anchor: middle; font: 13px system-ui; }
+.defs { position: absolute; width: 0; height: 0; }

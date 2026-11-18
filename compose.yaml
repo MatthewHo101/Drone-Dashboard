@@ -3,6 +3,12 @@ services:
     build: .
     ports:
       - "127.0.0.1:8080:8080"
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      WHATSAPP_COMMUNITY_URL: ${WHATSAPP_COMMUNITY_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - fieldbench-data:/data
     restart: unless-stopped

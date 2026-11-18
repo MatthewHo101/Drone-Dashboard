@@ -1,4 +1,5 @@
 """Run the shared Fieldbench workspace on a private network."""
+import team
 import argparse
 import base64
 import binascii
@@ -44,6 +45,8 @@ CREATE TABLE IF NOT EXISTS records (
 );
 """
 ASSETS = {
+    "/team": ("team.html", "text/html; charset=utf-8"),
+    "/team.js": ("team.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -63,7 +66,7 @@ def database(write=False):
 def initialize():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database() as conn:
-        conn.executescript(SCHEMA)
+        conn.executescript(SCHEMA + team.SCHEMA)
 
 
 def password_hash(password, salt):
@@ -143,6 +146,7 @@ def save_record(conn, data, actor, record_id=None):
         details["expected"] = clean_text(data, "expected", 2000, True)
         details["actual"] = clean_text(data, "actual", 2000, status != "Planned")
     elif kind == "issues":
+        details["project"] = clean_text(data, "project", 100)
         details["next_action"] = clean_text(data, "next_action", 300, status != "Done")
     else:
         details["supplier"] = clean_text(data, "supplier", 100)
@@ -278,6 +282,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.json(401, {"error": "Sign in to Fieldbench."},
                               {"WWW-Authenticate": 'Basic realm="Fieldbench", charset="UTF-8"'})
                     return
+                if team.factor_gate(self, conn, actor, path) or team.handle(self, conn, path):
+                    return
                 if self.command == "GET" and path in ASSETS:
                     name, content_type = ASSETS[path]
                     self.send_body(200, (ROOT / "static" / name).read_bytes(), content_type)
@@ -327,6 +333,8 @@ def main():
     serve.add_argument("--demo", action="store_true")
     user = sub.add_parser("add-user")
     user.add_argument("name")
+    factor = sub.add_parser("enable-2fa")
+    factor.add_argument("name")
     backup = sub.add_parser("backup")
     backup.add_argument("destination", type=Path)
     args = parser.parse_args()
@@ -347,6 +355,9 @@ def main():
         except sqlite3.IntegrityError:
             parser.error("Username already exists.")
         print(f"Created user {args.name}.")
+    elif args.command == "enable-2fa":
+        with database() as conn:
+            team.enroll(conn, args.name)
     elif args.command == "backup":
         try:
             with args.destination.open("xb"):
