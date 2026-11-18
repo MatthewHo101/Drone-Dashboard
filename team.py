@@ -1,4 +1,5 @@
 """Team workspace persistence, protected uploads, and authenticator verification."""
+import commercial
 import base64
 import hashlib
 import hmac
@@ -95,7 +96,12 @@ def upload(conn, data):
     task = data.get("task")
     if task and not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?", (task,)).fetchone():
         raise ValueError("Choose an existing task.")
-    return conn.execute("INSERT INTO documents(task,name,body) VALUES(?,?,?)", (task or None,name,raw)).lastrowid
+    doc_id = conn.execute("INSERT INTO documents(task,name,body) VALUES(?,?,?)", (task or None,name,raw)).lastrowid
+    if data.get("sale"):
+        sale = commercial.require_row(conn,"sales",data["sale"])
+        conn.execute("INSERT INTO sale_docs VALUES(?,?)",(doc_id,sale["id"]))
+    return doc_id
+
 
 
 def summarize(notes):
@@ -114,11 +120,19 @@ def summarize(notes):
 
 
 def handle(handler, conn, path, actor):
-    if path.startswith("/downloads/") and handler.command == "GET":
+    if path.startswith(("/downloads/","/previews/")) and handler.command == "GET":
         doc = conn.execute("SELECT name,body FROM documents WHERE id=?", (path.split("/")[-1],)).fetchone()
         if not doc:
             raise LookupError("Document not found.")
         import security
+        if path.startswith("/previews/"):
+            mime = commercial.preview_type(doc["body"])
+            if not mime:
+                raise ValueError("This format is available as a download.")
+            security.audit(conn,"Document previewed",actor,path.rsplit("/",1)[-1])
+            conn.commit()
+            handler.send_body(200,doc["body"],mime,{"Content-Disposition":"inline","Content-Security-Policy":"sandbox; default-src 'none'" })
+            return True
         security.audit(conn,"Document downloaded",actor,path.rsplit("/",1)[-1])
         conn.commit()
         handler.send_body(200, doc["body"], "application/octet-stream",
@@ -127,9 +141,15 @@ def handle(handler, conn, path, actor):
     if not path.startswith("/api/team"):
         return False
     if path == "/api/team" and handler.command == "GET":
-        queries = {"documents":"SELECT id,task,name FROM documents", "orders":"SELECT * FROM orders",
-                   "charts":"SELECT * FROM charts", "meetings":"SELECT * FROM meetings"}
+        queries = {"orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
+                   "charts":"SELECT c.*,p.project FROM charts c LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
+        result.update(commercial.snapshot(conn))
+        result["documents"] = []
+        for row in conn.execute("SELECT d.id,d.task,d.name,l.sale,substr(d.body,1,8) AS signature FROM documents d LEFT JOIN sale_docs l ON l.document=d.id ORDER BY d.id DESC"):
+            doc = dict(row)
+            doc["preview"] = commercial.preview_type(doc.pop("signature"))
+            result["documents"].append(doc)
         community = os.environ.get("WHATSAPP_COMMUNITY_URL","")
         result["community"] = community if re.fullmatch(r"https://chat\.whatsapp\.com/[A-Za-z0-9_-]+",community) else ""
         handler.json(200,result)
@@ -138,6 +158,18 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, 7*1024*1024+4096)
     op = path.rsplit("/",1)[-1]
+    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document"):
+        conn.execute("BEGIN IMMEDIATE")
+        token = string(data,"request_key",64,True)
+        if token:
+            if not conn.execute("INSERT OR IGNORE INTO commercial_writes VALUES(?,?,?)",(token,op,actor)).rowcount:
+                handler.json(200,{"saved":True})
+                return True
+        if op!="document":
+            commercial.apply(conn,op,data,actor)
+            conn.commit()
+            handler.json(200,{"saved":True})
+            return True
     if op == "document":
         upload(conn,data)
     elif op == "order":
@@ -148,17 +180,25 @@ def handle(handler, conn, path, actor):
         if currency not in ("HKD","USD","EUR","GBP","CNY","AUD","CAD"):
             raise ValueError("Choose a supported currency.")
         doc = upload(conn,data)
-        conn.execute("INSERT INTO orders(supplier,invoice,currency,quantity,unit_minor,extra_minor,document,status) VALUES(?,?,?,?,?,?,?,?)",
+        purchase = conn.execute("INSERT INTO orders(supplier,invoice,currency,quantity,unit_minor,extra_minor,document,status) VALUES(?,?,?,?,?,?,?,?)",
             (string(data,"supplier"),string(data,"invoice"),currency,quantity,money(data,"unit"),money(data,"extras"),doc,STAGES[0]))
+        category = commercial.enum(data.get("category","General"),("R&D","Commercial","General"))
+        conn.execute("INSERT INTO purchase_tags VALUES(?,?,?)",(purchase.lastrowid,category,string(data,"project",100,True)))
     elif op == "order-status":
+        if data.get("status")=="Cancelled" and conn.execute("SELECT 1 FROM allocations WHERE purchase=?",(data.get("id"),)).fetchone():
+            raise ValueError("This purchase has costs allocated to a sales order.")
         if data.get("status") not in STAGES:
             raise ValueError("Unknown order status.")
         if not conn.execute("UPDATE orders SET status=? WHERE id=?", (data["status"],data.get("id"))).rowcount:
             raise LookupError("Order not found.")
     elif op == "meeting":
         day = date.fromisoformat(string(data,"day",10))
-        conn.execute("INSERT INTO meetings(title,day,notes,summary) VALUES(?,?,?,?)",
+        meeting = conn.execute("INSERT INTO meetings(title,day,notes,summary) VALUES(?,?,?,?)",
                      (string(data,"title"),day.isoformat(),string(data,"notes",30000),""))
+        opportunity = data.get("opportunity") or None
+        if opportunity:
+            commercial.require_row(conn,"opportunities",opportunity)
+        conn.execute("INSERT INTO meeting_links VALUES(?,?,?)",(meeting.lastrowid,string(data,"project",100,True),opportunity))
     elif op == "summarize":
         row = conn.execute("SELECT notes FROM meetings WHERE id=?", (data.get("id"),)).fetchone()
         if not row:
@@ -171,7 +211,8 @@ def handle(handler, conn, path, actor):
             nodes = line.split("->")
             if len(nodes) != 2 or not all(node.strip() for node in nodes):
                 raise ValueError("Enter one connection per line, such as Design -> Review.")
-        conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title"),edges))
+        chart = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title"),edges))
+        conn.execute("INSERT INTO chart_projects VALUES(?,?)",(chart.lastrowid,string(data,"project",100,True)))
     else:
         raise LookupError("Unknown workspace operation.")
     conn.commit()

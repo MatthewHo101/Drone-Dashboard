@@ -41,6 +41,7 @@ def reset_accounts(conn, initial_password):
     conn.execute("INSERT INTO users VALUES(?,?,?)",("admin",salt,password_hash(initial_password,salt)))
     conn.execute("INSERT INTO admins VALUES('admin')")
     conn.execute("INSERT INTO profiles VALUES('admin','Administrator')")
+    conn.execute("UPDATE opportunities SET owner='admin'")
     conn.execute("UPDATE records SET owner='admin' WHERE owner IS NULL")
     conn.execute("DELETE FROM registrations WHERE name='admin'")
     conn.execute("INSERT INTO first_login VALUES('admin',?)",(digest(activation),))

@@ -1,4 +1,5 @@
 """Regression checks for the private workspace security boundaries."""
+import base64
 import hashlib
 import io
 import json
@@ -62,6 +63,45 @@ class WorkspaceSecurity(unittest.TestCase):
         _, settings = self.call("/account/settings",cookie=admin_cookie)
         request = next(row for row in settings["requests"] if row["name"]==name)
         self.call("/account/approve",{"request_id":request["id"],"password":self.password},admin_cookie)
+
+    def test_quote_to_delivery_and_shared_attachments(self):
+        cookie = self.login()
+        def post(op, fields, status=200):
+            return self.call("/api/team/"+op, fields, cookie, status)
+
+        post("lead",dict(customer="Farm",title="Pilot",currency="HKD",owner="owner",
+                         stage="Quoted",quote="80000",estimate="52000",action="Confirm dates",project="A"))
+        post("convert",{"lead":1})
+        post("convert",{"lead":1})
+        post("item",dict(sale=1,item=1,label="Drone",quantity="1",price="80000",cost="50000"))
+        freight=dict(sale=1,label="Freight",amount="2000",day="2026-11-19",request_key="freight-once")
+        post("charge",freight)
+        post("charge",freight)
+        post("payment",dict(sale=1,label="Deposit",amount="20000",day="2026-11-19"))
+        post("fulfillment",dict(sale=1,status="Delivered",due="2026-11-19"))
+        raw=b"\x89PNG\r\n\x1a\n"+b"test"
+        file=dict(sale=1,filename="delivery.png",file=base64.b64encode(raw).decode())
+        post("document",file)
+        post("document",dict(file,sale=999),400)
+        _,snapshot=self.call("/api/team",cookie=cookie)
+        self.assertEqual(len(snapshot["sales"]),1)
+        self.assertEqual(len(snapshot["sale_entries"]),2)
+        self.assertEqual(len(snapshot["documents"]),1)
+        self.assertEqual(snapshot["documents"][0]["sale"],1)
+        self.assertEqual(snapshot["documents"][0]["preview"],"image/png")
+        self.call("/previews/1",status=401)
+        head,preview=self.call("/previews/1",cookie=cookie)
+        self.assertIn(b"image/png",head)
+        self.assertEqual(preview,raw)
+        _,home=self.call("/api/workspace",cookie=cookie)
+        self.assertEqual(home["leads"],[])
+        post("order",dict(currency="HKD",quantity="3",supplier="Parts Co",invoice="P1",
+             unit="5",extras="1",file=file["file"],filename="purchase.png"))
+        post("allocate",dict(sale=1,purchase=1,quantity="2"))
+        post("allocate",dict(sale=1,purchase=1,quantity="2"),400)
+        post("allocate",dict(sale=1,purchase=1,quantity="1"))
+        _,snapshot=self.call("/api/team",cookie=cookie)
+        self.assertEqual(sum(int(a["amount"]) for a in snapshot["allocations"]),1600)
 
     def test_reset_and_first_login(self):
         old = self.login()

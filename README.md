@@ -55,7 +55,7 @@ All signed-in founders can view and edit records. The app records the last edito
 
 ## Team workspace
 
-Choose **Team workspace** in the sidebar. Use the project board to assign tasks to founders, group them by project, set due dates, and move cards through four stages. Existing issues appear on this board. Dated tasks and meetings offer **Add to Google Calendar**. Google opens a prefilled all-day event for the founder to review and save. Later dashboard edits require a corresponding calendar edit.
+Use the **Engineering**, **Commercial**, and **Shared** sidebar groups. Use the project board to assign tasks to founders, group them by project, set due dates, and move cards through four stages. Existing issues appear on this board. Dated tasks and meetings offer **Add to Google Calendar**. Google opens a prefilled all-day event for the founder to review and save. Later dashboard edits require a corresponding calendar edit.
 
 Upload documents or invoices up to 5 MiB each. Choose a task during upload to show the file on its card. Documents and invoices are stored in the SQLite database and included in its backup. For an order, enter the invoice reference, currency, quantity, unit price, tax and shipping. For a mixed-item invoice, use quantity one and its pre-tax subtotal as the unit price. Lysim calculates the total and sums active orders separately by currency. Invoice values are entered manually. Cancelled orders stay in the history.
 
@@ -84,3 +84,11 @@ Set `WHATSAPP_COMMUNITY_URL` in the untracked Compose .env file to your communit
 First create a backup using the command above. Run `docker compose exec fieldbench python app.py reset-accounts` from a trusted SSH session. Confirm the reset and enter the temporary admin password at the hidden prompts. This replaces every account and session, invalidates old authenticators and recovery codes, and transfers workspace records to admin. Pending registrations other than admin remain available for review. Documents, invoices, meetings, audit history, and the workspace 2FA policy are preserved.
 
 Sign in as admin with the temporary password, enter the one-time activation code printed in the SSH console, and choose a different password of at least 12 characters. The server issues the first session only after that change succeeds. Review pending requests under Account. If workspace-wide 2FA is required, enroll the new administrator before reviewing requests.
+
+### Commercial workspace
+
+Home shows the signed-in founder's work and upcoming customer follow-ups. Commercial overview combines opportunities with profitability by currency. Convert an opportunity once to create a sales order with its quoted net price. Edit the order item to record final net revenue and direct unit costs. An unknown item cost excludes a delivered order from the finalized profit totals. Enter zero explicitly when there is no additional direct item cost.
+
+Log freight or tooling as a one-time cost, record deposits as payments, and allocate purchased units with their proportional share of supplier tax and shipping. Exclude allocated costs from manually entered unit costs. Payments reduce the balance due. Delivered gross profit uses revenue less direct costs and excludes overhead. Cancelled sales are excluded from overview totals.
+
+Photos and sales documents use the existing signed-in file library with a 5 MiB per-file limit. Upload from Sales orders or choose an order on Documents. JPEG and PNG have inline image previews, PDFs open in a viewer tab, and other formats download. Existing supplier orders are now labeled Purchases.

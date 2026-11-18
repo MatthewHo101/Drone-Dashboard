@@ -4,7 +4,7 @@ const feedback = document.querySelector("#feedback");
 const stages = ["Open", "In progress", "Blocked", "Done"];
 const orderStages = ["Ordered", "In transit", "Received", "Cancelled"];
 const currencies = ["HKD","USD","EUR","GBP","CNY","AUD","CAD"];
-let workspace, team, project = "";
+let workspace, team, project = "", purchaseCategory = "", purchaseProject = "";
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const choices = (values, selected) => values.map(value => {
   const [key,label] = Array.isArray(value) ? value : [value,value];
@@ -40,12 +40,13 @@ function person(name) {
 }
 function board() {
   const items = tasks();
-  const projects = [...new Set(items.map(t=>t.details.project).filter(Boolean))].sort();
+  const projects = [...new Set([project,...items.map(t=>t.details.project),...team.charts.map(c=>c.project),...team.meetings.map(m=>m.project)].filter(Boolean))].sort();
   const filtered = items.filter(t=>!project||project===t.details.project);
   const fields = input("title","Task")+input("project","Project","text",'maxlength="100"')+
     select("owner","Owner",workspace.users.map(name=>[name,person(name)]),workspace.actor)+input("record_date","Due date","date","")+
     input("next_action","Next action");
-  return form("task","Add a task",fields)+'<label class="filter">Project <select id="project">'+
+  const related = project ? panel("Project resources",team.opportunities.filter(o=>o.project===project).map(o=>'<a class="text-link" href="#commercial/'+o.id+'">'+esc(o.customer)+" · "+esc(o.title)+"</a>").join("")+team.charts.filter(c=>c.project===project).map(c=>diagram(c.edges)+esc(c.title)).join("")+team.meetings.filter(m=>m.project===project).map(m=>'<p>'+esc(m.title)+' · '+esc(m.day)+'</p>').join("")) : "";
+  return related + form("task","Add a task",fields)+'<label class="filter">Project <select id="project">'+
     choices([["","All projects"],...projects],project)+'</select></label><div class="board">'+stages.map(stage=>
     panel(stage,filtered.filter(t=>t.status===stage).map(t=>{
       const docs=team.documents.filter(d=>d.task===t.id);
@@ -58,14 +59,20 @@ function board() {
 function download(doc) {
   return '<a class="text-link" href="/downloads/'+doc.id+'">'+esc(doc.name)+' ↓</a>';
 }
+function attachment(doc) {
+  const order=team.sales.find(s=>s.id===doc.sale);
+  const preview=doc.preview?.startsWith("image/")?'<a href="/previews/'+doc.id+'" target="_blank" rel="noopener"><img class="order-photo" loading="lazy" src="/previews/'+doc.id+'" alt="'+esc(doc.name)+'"></a>':
+    doc.preview==="application/pdf"?'<a class="text-link" target="_blank" rel="noopener" href="/previews/'+doc.id+'">View PDF ↗</a>':"";
+  return '<div class="attachment">'+preview+download(doc)+(order?'<a class="text-link" href="#sales/'+order.id+'">SO-'+order.id+' · '+esc(order.title)+'</a>':"")+'</div>';
+}
 function documents() {
-  return form("document","Upload a document",taskSelect()+input("file","Document · up to 5 MiB","file"))+
-    team.documents.map(d=>panel(d.name,download(d)+'<small>'+esc(tasks().find(t=>t.id===d.task)?.title||"Unassigned")+'</small>')).join("");
+  return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 5 MiB","file"))+
+    team.documents.map(d=>panel(d.name,attachment(d)+'<small>'+esc(tasks().find(t=>t.id===d.task)?.title||"")+'</small>')).join("");
 }
 function meetings() {
-  return form("meeting","Add meeting notes",input("title","Meeting")+input("day","Meeting date","date")+
+  return form("meeting","Add meeting notes",input("project","Engineering project","text",'maxlength="100"')+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
     input("notes","Notes or transcript","area",'required maxlength="30000"'))+
-    team.meetings.map(m=>panel(m.title,'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
+    team.meetings.map(m=>panel(m.title,projectLink(m.project)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
     '<details><summary>Meeting notes</summary><pre>'+esc(m.notes)+'</pre></details>'+
     (m.summary?'<h3>AI summary</h3><pre>'+esc(m.summary)+'</pre>':'')+
     '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')).join("");
@@ -90,34 +97,35 @@ function diagram(source) {
     names.map(name=>{const [x,y]=point(name);return '<g><title>'+esc(name)+'</title><rect x="'+(x-75)+'" y="'+(y-17)+'" width="150" height="34" rx="8"/><text x="'+x+'" y="'+(y+4)+'">'+esc(name.length>21?name.slice(0,20)+"…":name)+'</text></g>';}).join("")+'</svg></div>';
 }
 function charts() {
-  return form("chart","Create a flowchart",input("title","Chart name")+input("edges","Connections, one per line","area",'required maxlength="4000" placeholder="Design -> Review&#10;Review -> Test"'))+
+  return form("chart","Create a flowchart",input("project","Engineering project","text",'maxlength="100"')+input("title","Chart name")+input("edges","Connections, one per line","area",'required maxlength="4000" placeholder="Design -> Review&#10;Review -> Test"'))+
     '<svg class="defs" aria-hidden="true"><defs><marker id="arrow" orient="auto" markerWidth="8" markerHeight="8" refX="7" refY="4"><polygon points="0,0 8,4 0,8"/></marker></defs></svg>'+
-    team.charts.map(c=>panel(c.title,diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>')).join("");
+    team.charts.map(c=>panel(c.title,projectLink(c.project)+diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>')).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
 }
 function orders() {
   const totals=new Map();
-  const cards=team.orders.map(o=>{
+  const cards=team.orders.filter(o=>(!purchaseCategory||o.category===purchaseCategory)&&(!purchaseProject||o.project===purchaseProject)).map(o=>{
     const total=BigInt(o.quantity)*BigInt(o.unit_minor)+BigInt(o.extra_minor);
     if(o.status!=="Cancelled") totals.set(o.currency,(totals.get(o.currency)||0n)+total);
-    return panel(o.supplier,"<small>Invoice "+esc(o.invoice)+"</small><p>"+o.quantity+" × "+amount(BigInt(o.unit_minor))+" + "+
+    return panel(o.supplier,projectLink(o.project)+esc(o.category)+" · <small>Invoice "+esc(o.invoice)+"</small><p>"+o.quantity+" × "+amount(BigInt(o.unit_minor))+" + "+
       amount(BigInt(o.extra_minor))+" = <strong>"+esc(o.currency)+" "+amount(total)+'</strong></p><label>Status <select data-order="'+o.id+'">'+choices(orderStages,o.status)+'</select></label>'+
       download(team.documents.find(d=>d.id===o.document)));
   }).join("");
-  return form("order","Record an invoice",input("supplier","Supplier")+input("invoice","Invoice reference")+select("currency","Currency",currencies)+
+  return form("order","Record an invoice",select("category","Category",["General","R&D","Commercial"])+input("project","Project","text",'maxlength="100"')+input("supplier","Supplier")+input("invoice","Invoice reference")+select("currency","Currency",currencies)+
     input("quantity","Quantity","number",'required min="1" max="999999" value="1"')+
     input("unit","Unit cost","number",'required min="0" step=".01"')+input("extras","Tax and shipping combined","number",'required min="0" step=".01" value="0"')+
     taskSelect()+input("file","Invoice · up to 5 MiB","file"))+
-    panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
+    select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+select("purchaseProject","Filter by project",[["","All projects"],...new Set(team.orders.map(o=>o.project).filter(Boolean))],purchaseProject)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
-const pages={board:["Project board",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Orders & costs",orders]};
+const pages={board:["Project board",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
-  const key=location.hash.slice(1);
+  const [key,suffix]=location.hash.slice(1).split("/");
+  if(key==="board") {try {project=decodeURIComponent(suffix||"");} catch {project="";}}
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;
   view.innerHTML='<header class="intro"><h1>'+title+'</h1></header>'+display();
-  document.querySelectorAll("nav a").forEach(a=>a.toggleAttribute("aria-current",a.hash===(location.hash||"#board")));
+  highlightNavigation();
 }
 async function api(url,data,method="POST") {
   const response=await fetch(url,data?{method,headers:{"Content-Type":"application/json","X-Fieldbench":"1"},body:JSON.stringify(data)}:{});
@@ -141,6 +149,10 @@ view.addEventListener("submit",event=>{
   const form=event.target,op=form.dataset.op;
   perform(form.querySelector("button"),async()=>{
     const data=Object.fromEntries(new FormData(form));
+    if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document"].includes(op)) {
+      form.dataset.key ||= crypto.randomUUID();
+      data.request_key=form.dataset.key;
+    }
     if(data.file instanceof File){
       if(!data.file.size||data.file.size>5*1024*1024) throw Error("Choose a nonempty file up to 5 MiB.");
       const file=data.file;
@@ -158,7 +170,9 @@ view.addEventListener("submit",event=>{
 });
 view.addEventListener("change",event=>{
   const control=event.target;
-  if(control.id==="project"){project=control.value; render();return;}
+  if(control.id==="project"){location.hash="#board/"+encodeURIComponent(control.value);return;}
+  if(control.name==="categoryFilter"){purchaseCategory=control.value;render();return;}
+  if(control.name==="purchaseProject"){purchaseProject=control.value;render();return;}
   if(control.dataset.task){
     const task=tasks().find(t=>t.id===Number(control.dataset.task));
     const status=control.value;

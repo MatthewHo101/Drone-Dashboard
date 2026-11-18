@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS records (
 ASSETS = {
     "/security": ("security.html", "text/html; charset=utf-8"),
     "/security.js": ("security.js", "text/javascript; charset=utf-8"),
+    "/nav.js": ("nav.js", "text/javascript; charset=utf-8"),
+    "/commercial.js": ("commercial.js", "text/javascript; charset=utf-8"),
     "/login": ("login.html", "text/html; charset=utf-8"),
     "/login.js": ("login.js", "text/javascript; charset=utf-8"),
     "/team": ("team.html", "text/html; charset=utf-8"),
@@ -71,7 +73,7 @@ def database(write=False):
 def initialize():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database() as conn:
-        conn.executescript(SCHEMA + team.SCHEMA + security.SCHEMA)
+        conn.executescript(SCHEMA + team.SCHEMA + security.SCHEMA + team.commercial.SCHEMA)
 
 
 def password_hash(password, salt):
@@ -373,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                 session = self.active_session(conn)
                 actor = "Morgan" if self.server.demo else (session["name"] if session else None)
                 limited = bool(actor and not self.server.demo and security.mandatory(conn) and not security.exists(conn,"factors",actor))
-                if limited and path not in ("/security","/security.js","/style.css","/auth/status","/auth/logout","/account/settings","/account/start","/account/confirm","/account/logout-all"):
+                if limited and path not in ("/security","/security.js","/nav.js","/style.css","/auth/status","/auth/logout","/account/settings","/account/start","/account/confirm","/account/logout-all"):
                     if self.command=="GET" and path in ("/","/login","/team"):
                         self.send_body(303,b"","text/plain",{"Location":"/security"})
                     else:
@@ -419,7 +421,11 @@ class Handler(BaseHTTPRequestHandler):
                 if self.command == "GET" and path == "/api/workspace":
                     records = [as_record(row) for row in conn.execute("SELECT * FROM records ORDER BY id DESC")]
                     users = [row["name"] for row in conn.execute("SELECT name FROM users ORDER BY name")]
-                    self.json(200, {"records": records, "users": users, "labels": dict(conn.execute("SELECT name,display FROM profiles")), "actor": actor, "demo": self.server.demo})
+                    leads = [dict(r) for r in conn.execute("SELECT o.id,o.title,o.customer,o.action,o.due,o.owner FROM opportunities o WHERE o.stage <> 'Lost' AND NOT EXISTS (SELECT 1 FROM sales s WHERE s.opportunity=o.id) ORDER BY (o.due=''),o.due,o.id")]
+                    meeting = conn.execute("""SELECT m.title,m.day,substr(coalesce(nullif(m.summary,''),m.notes),1,260) AS excerpt,
+                        o.customer FROM meetings m JOIN meeting_links l ON l.meeting=m.id JOIN opportunities o ON o.id=l.opportunity
+                        ORDER BY m.day DESC,m.id DESC LIMIT 1""").fetchone()
+                    self.json(200, {"latest_customer_meeting":dict(meeting) if meeting else None,"leads":leads,"records": records, "users": users, "labels": dict(conn.execute("SELECT name,display FROM profiles")), "actor": actor, "demo": self.server.demo})
                     return
             entry = re.fullmatch(r"/api/records/([1-9][0-9]{0,17})", path)
             if (self.command == "POST" and path == "/api/records") or (self.command == "PUT" and entry):

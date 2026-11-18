@@ -96,22 +96,33 @@ function overview() {
   const recent = records("tests").filter((record) => record.status !== "Planned")
     .sort((a, b) => b.record_date.localeCompare(a.record_date));
   const ordered = records("parts").filter((record) => record.status === "Ordered");
+  const leadRows = leads => leads.map(o=>'<a class="record-row" href="/team#commercial/'+o.id+'"><span class="row-title"><strong>'+safe(o.customer)+' · '+safe(o.title)+'</strong><small>'+safe(o.action)+' · '+safe(o.due||"No follow-up date")+'</small></span></a>').join("");
+  const myIssues = issues.filter(i=>i.owner===state.actor).sort((a,b)=>(a.record_date||"9999").localeCompare(b.record_date||"9999"));
+  const myTests = planned.filter(t=>t.owner===state.actor);
+  const mine = state.leads.filter(o=>o.owner===state.actor);
+  const myWork = '<section class="panel"><div class="panel-head"><h2>My work</h2></div>'+
+    (myIssues.length||myTests.length?list([...myIssues,...myTests],""):"")+leadRows(mine)+
+    (!myIssues.length&&!myTests.length&&!mine.length?'<p class="empty">No assigned work.</p>':'')+'</section>';
+  const commercial = '<section class="panel"><div class="panel-head"><h2>Commercial follow-ups</h2><a href="/team#commercial">Open pipeline ↗</a></div>'+
+    (leadRows(state.leads.slice(0,4))||'<p class="empty">No open opportunities.</p>')+'</section>';
+  const meeting=state.latest_customer_meeting;
+  const learning=meeting?'<section class="panel"><div class="panel-head"><h2>Latest customer meeting</h2><a href="/team#meetings">Open meetings ↗</a></div><div class="entries"><strong>'+safe(meeting.customer)+' · '+safe(meeting.title)+'</strong><p>'+safe(meeting.excerpt)+'</p><small>'+safe(meeting.day)+'</small></div></section>':"";
   const metrics = [
     ["builds", "Active builds", builds.length, "◇"],
     ["tests", "Planned tests", planned.length, "⌁"],
     ["issues", "Open issues", issues.length, "◎"],
     ["parts", "Parts on order", ordered.length, "▤"],
   ];
-  return '<header class="intro"><div><h1>Development overview</h1><p>Build progress, test results, and the work that moves them forward.</p></div>' +
+  return '<header class="intro"><div><h1>Home</h1></div>' +
     '<button class="primary" data-new="tests">+ Log a test</button></header>' +
-    '<div class="metrics">' + metrics.map(([kind, label, count, icon]) => (
+    myWork + '<div class="metrics">' + metrics.map(([kind, label, count, icon]) => (
       '<a class="metric" href="#' + kind + '"><span class="metric-icon" aria-hidden="true">' + icon +
       '</span><span class="metric-label">' + label + '</span><strong>' + count + '</strong><span class="metric-arrow" aria-hidden="true">↗</span></a>'
     )).join("") + '</div>' +
-    '<div class="panel-grid">' + panel("Needs attention", "issues", urgent, "No blocked or overdue issues.") +
+    '<div class="panel-grid">' + panel("Engineering blockers", "issues", urgent, "No blocked or overdue issues.") + commercial +
     panel("Recent test results", "tests", recent.slice(0, 4), "Completed test results will appear here.") +
     panel("Active builds", "builds", builds.slice(0, 4), "Add a build to start recording tests.") +
-    panel("Upcoming tests", "tests", planned.slice(0, 4), "No tests planned.") + '</div>';
+    panel("Upcoming tests", "tests", planned.slice(0, 4), "No tests planned.") + learning + '</div>';
 }
 
 function section(kind) {
@@ -290,10 +301,7 @@ function render() {
   const { kind, id } = route();
   if (kind !== lastHash) filter = "";
   lastHash = kind;
-  document.querySelectorAll("nav a").forEach((link) => {
-    if (link.getAttribute("href") === "#" + kind) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
-  });
+  highlightNavigation();
   workspace.innerHTML = kind === "overview" ? overview() : section(kind);
   if (id) {
     const record = getRecord(id);

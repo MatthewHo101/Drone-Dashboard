@@ -1,22 +1,15 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Account · Lysim</title><link rel="stylesheet" href="/style.css"><script defer src="/security.js"></script></head>
+<title>Account · Lysim</title><link rel="stylesheet" href="/style.css"><script defer src="/nav.js"></script><script defer src="/security.js"></script></head>
 <body><aside class="sidebar">
     <a class="brand" href="/#overview" aria-label="Lysim overview">
       <span class="brand-mark" aria-hidden="true">⌘</span>
-      <span>Lysim<small>DRONE R&amp;D</small></span>
+      <span>Lysim<small>WORKSPACE</small></span>
     </a>
-    <nav aria-label="Workspace">
-      <a href="/#overview"><span aria-hidden="true">◫</span>Overview</a>
-      <a href="/#builds"><span aria-hidden="true">◇</span>Builds</a>
-      <a href="/#tests"><span aria-hidden="true">⌁</span>Tests</a>
-      <a href="/#issues"><span aria-hidden="true">◎</span>Issues</a>
-      <a href="/#parts"><span aria-hidden="true">▤</span>Parts</a>
-      <a href="/team"><span aria-hidden="true">▦</span>Team workspace</a>
-    <a href="/security" aria-current="page">Account</a></nav>
+    <nav aria-label="Workspace"></nav>
     <div id="identity" class="identity"></div>
   </aside>
-<main><div class="topbar">Engineering workspace <button id="sign-out" class="secondary">Sign out</button></div><div id="workspace">
+<main><div class="topbar">Lysim workspace <button id="sign-out" class="secondary">Sign out</button></div><div id="workspace">
 <header class="intro"><div><h1>Account</h1><p id="identity-label"></p></div></header><p id="state"></p><p role="status" id="message"></p>
 <form id="controls" class="form-grid" hidden>
 <label class="wide">Your current password<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
