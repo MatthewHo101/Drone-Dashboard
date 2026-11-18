@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account security · Lysim</title><link rel="stylesheet" href="/style.css"><script defer src="/security.js"></script></head>
+<body><aside class="sidebar"><a class="brand" href="/">Lysim</a><nav><a href="/">Overview</a><a href="/login">Your account</a></nav></aside>
+<main><div class="topbar">Account security</div><div id="workspace">
+<h1>Account security</h1><p id="state"></p><p role="status" id="message"></p>
+<form id="controls" class="form-grid" hidden>
+<label class="wide">Your current password<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
+<section class="panel wide"><div class="panel-head"><h2>Authenticator</h2></div><div class="entries">
+<button type="submit" class="secondary" value="start" id="start">Start setup</button>
+<div hidden id="setup"><p>Enter this key in an authenticator app using a six-digit, time-based account named Lysim.</p><pre id="key"></pre>
+<label>Authenticator code <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label>
+<button class="primary" value="confirm">Confirm enrollment</button></div>
+<button class="secondary" value="codes" id="codes" hidden>Replace recovery codes</button>
+<div hidden id="recovery"><p>Save these one-time recovery codes in your password manager.</p><pre id="secrets"></pre><button type="button" class="secondary" id="dismiss">I saved the codes</button></div></div></section>
+<button class="secondary" value="logout-all">Sign out all devices</button>
+<section class="panel wide" hidden id="admin"><div class="panel-head"><h2>Administration</h2></div><div class="entries">
+<a href="/login" class="text-link">Add a user from Your account</a>
+<label>User <select name="target"></select></label>
+<button class="secondary" value="disable">Disable user</button> <button class="secondary" value="enable">Enable user</button>
+<button class="secondary" value="grant">Grant administrator</button> <button class="secondary" value="demote">Remove administrator role</button>
+<label>New password for selected user <input name="replacement" type="password" autocomplete="new-password" maxlength="128"></label>
+<button class="secondary" value="reset">Reset password</button>
+<p><button class="secondary" value="require" id="require">Require 2FA for the workspace</button></p>
+<h3>Recent security activity</h3><ol id="events"></ol></div></section>
+</form></div></main></body></html>

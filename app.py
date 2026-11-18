@@ -1,4 +1,5 @@
 """Run the shared Lysim workspace on a private network."""
+import security
 import team
 import argparse
 import time
@@ -45,6 +46,8 @@ CREATE TABLE IF NOT EXISTS records (
 );
 """
 ASSETS = {
+    "/security": ("security.html", "text/html; charset=utf-8"),
+    "/security.js": ("security.js", "text/javascript; charset=utf-8"),
     "/login": ("login.html", "text/html; charset=utf-8"),
     "/login.js": ("login.js", "text/javascript; charset=utf-8"),
     "/team": ("team.html", "text/html; charset=utf-8"),
@@ -68,17 +71,18 @@ def database(write=False):
 def initialize():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database() as conn:
-        conn.executescript(SCHEMA + team.SCHEMA)
+        conn.executescript(SCHEMA + team.SCHEMA + security.SCHEMA)
 
 
 def password_hash(password, salt):
-    return hashlib.scrypt(password.encode(), salt=salt, n=16384, r=8, p=1)
+    return security.password_hash(password, salt)
 
 
 def add_user(name, password):
     salt = secrets.token_bytes(16)
     with database(write=True) as conn:
         conn.execute("INSERT INTO users VALUES (?, ?, ?)", (name, salt, password_hash(password, salt)))
+        security.audit(conn,"Account created","server console",name)
 
 
 def as_record(row):
@@ -274,24 +278,34 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(name, str) or not isinstance(password, str) or len(password) > 128:
             raise ValueError("Check the username and password.")
         if path == "/auth/register":
-            if not actor:
-                self.json(401, {"error": "Sign in with an existing founder account to add a user."})
+            conn.execute("BEGIN IMMEDIATE")
+            if not actor or not security.exists(conn,"admins",actor) or not self.active_session(conn):
+                self.json(403, {"error": "Administrator access required."})
                 return
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", name) or name != name.strip() or len(password) < 12:
                 raise ValueError("Use a 1–40 character username and a password of 12–128 characters.")
             try:
-                add_user(name, password)
+                salt = secrets.token_bytes(16)
+                conn.execute("INSERT INTO users VALUES(?,?,?)",(name,salt,password_hash(password,salt)))
+                security.audit(conn,"Account created",actor,name)
+                conn.commit()
             except sqlite3.IntegrityError:
                 raise ValueError("That username already exists.")
             self.json(201, {"created": True})
             return
         conn.execute("BEGIN IMMEDIATE")
         user = conn.execute("SELECT * FROM users WHERE name=?", (name,)).fetchone()
-        actual = password_hash(password, user["salt"] if user else bytes(16))
-        if not user or not hmac.compare_digest(actual, user["password_hash"]):
+        now = int(time.time())
+        keys = security.throttle_keys(name, security.source(self))
+        until = security.blocked(conn,keys,now)
+        if until > now:
+            self.json(429, {"error":"Too many attempts. Try again shortly."},{"Retry-After":str(until-now)})
+            return
+        if not security.verify_password(password,user) or security.exists(conn,"disabled",name):
+            security.failure(conn, keys, now, name if user else "unknown")
+            conn.commit()
             self.json(401, {"error": "Check your username and password."})
             return
-        now = int(time.time())
         factor = conn.execute("SELECT * FROM factors WHERE name=?", (name,)).fetchone()
         if factor:
             candidate = data.get("code", "")
@@ -304,20 +318,36 @@ class Handler(BaseHTTPRequestHandler):
             step = None
             if isinstance(candidate, str) and re.fullmatch(r"[0-9]{6}", candidate):
                 step = team.verify_step(factor["secret"], candidate, factor["last_step"])
-            if step is None:
+            recovered = False
+            if isinstance(candidate,str) and re.fullmatch(r"[a-fA-F0-9]{20}",candidate):
+                recovered = bool(conn.execute("DELETE FROM recovery WHERE name=? AND digest=?",
+                                             (name,security.digest(candidate))).rowcount)
+            if recovered:
+                security.audit(conn,"Recovery code used",name)
+            if step is None and not recovered:
+                security.failure(conn,keys,now,name)
                 attempts = factor["attempts"] + 1
                 conn.execute("UPDATE factors SET attempts=?,blocked_until=? WHERE name=?",
                              (attempts % 5, now + 300 if attempts >= 5 else 0, name))
                 conn.commit()
                 self.json(403, {"error": "Invalid or already used code."})
                 return
-            conn.execute("UPDATE factors SET attempts=0,blocked_until=0,last_step=? WHERE name=?", (step,name))
+            conn.execute("UPDATE factors SET attempts=0,blocked_until=0,last_step=coalesce(?,last_step) WHERE name=?", (step,name))
+        if len(user["password_hash"]) == 64:
+            salt = secrets.token_bytes(16)
+            conn.execute("UPDATE users SET salt=?,password_hash=? WHERE name=?",(salt,password_hash(password,salt),name))
+        conn.execute("DELETE FROM limits WHERE key=?",(keys[0],))
+        security.audit(conn,"Signed in",name)
         token = secrets.token_urlsafe(32)
         digest = hashlib.sha256(("lysim:" + token).encode()).hexdigest()
         conn.execute("DELETE FROM sessions WHERE expires<=? OR token=?", (now,self.session_digest()))
         conn.execute("INSERT INTO sessions VALUES(?,?,?)", (digest,name,now+28800))
         conn.commit()
         self.json(200, {"signed_in": True}, {"Set-Cookie": f"lysim_session={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800"})
+
+    def active_session(self, conn):
+        return conn.execute("SELECT name FROM sessions WHERE token=? AND expires>? AND name NOT IN (SELECT name FROM disabled)",
+                            (self.session_digest(),int(time.time()))).fetchone()
 
     def dispatch(self):
         path = urlsplit(self.path).path
@@ -326,22 +356,44 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(403, {"error": "Use the demo loopback address."})
                 return
             with database() as conn:
-                session = conn.execute("SELECT name FROM sessions WHERE token=? AND expires>?",
-                                       (self.session_digest(), int(time.time()))).fetchone()
+                session = self.active_session(conn)
                 actor = "Morgan" if self.server.demo else (session["name"] if session else None)
+                limited = bool(actor and not self.server.demo and security.mandatory(conn) and not security.exists(conn,"factors",actor))
+                if limited and path not in ("/security","/security.js","/style.css","/auth/status","/auth/logout","/account/settings","/account/start","/account/confirm","/account/logout-all"):
+                    if self.command=="GET" and path in ("/","/login","/team"):
+                        self.send_body(303,b"","text/plain",{"Location":"/security"})
+                    else:
+                        self.json(403,{"error":"Enroll your authenticator to access the workspace."})
+                    return
                 if self.command == "POST" and path in ("/auth/login", "/auth/register", "/auth/logout"):
                     self.auth_action(conn, path, actor)
                     return
                 if self.command == "GET" and path == "/auth/status":
-                    self.json(200, {"actor":actor,"demo":self.server.demo})
+                    self.json(200, {"actor":actor,"demo":self.server.demo,"admin":bool(actor and security.exists(conn,"admins",actor)),"enroll":limited})
                     return
                 if not actor and path not in ("/login", "/login.js", "/style.css"):
-                    if self.command == "GET" and path in ("/", "/team"):
+                    if self.command == "GET" and path in ("/", "/team", "/security"):
                         path = "/login"
                     else:
                         self.json(401, {"error": "Sign in to Lysim."})
                         return
-                if team.handle(self, conn, path):
+                if path.startswith("/account/"):
+                    if self.server.demo:
+                        raise PermissionError("Use the live workspace to manage security.")
+                    if self.command=="GET" and path=="/account/settings":
+                        self.json(200,security.settings(conn,actor))
+                    elif self.command=="POST":
+                        data = team.payload(self,4096)
+                        conn.execute("BEGIN IMMEDIATE")
+                        if not self.active_session(conn):
+                            raise PermissionError("Sign in again.")
+                        result = security.manage(conn,actor,self.session_digest(),path.rsplit("/",1)[-1],data)
+                        conn.commit()
+                        self.json(200,result)
+                    else:
+                        raise LookupError("Unknown account operation.")
+                    return
+                if team.handle(self, conn, path, actor):
                     return
                 if self.command == "GET" and path in ASSETS:
                     name, content_type = ASSETS[path]
@@ -369,6 +421,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json(404, {"error": "Page not found."})
         except (ValueError, UnicodeError) as error:
             self.json(400, {"error": str(error)})
+        except PermissionError as error:
+            self.json(403, {"error": str(error)})
         except EditConflict as error:
             self.json(409, {"error": str(error)})
         except LookupError as error:
@@ -394,6 +448,8 @@ def main():
     user.add_argument("name")
     factor = sub.add_parser("enable-2fa")
     factor.add_argument("name")
+    admin = sub.add_parser("make-admin")
+    admin.add_argument("name")
     backup = sub.add_parser("backup")
     backup.add_argument("destination", type=Path)
     args = parser.parse_args()
@@ -414,6 +470,12 @@ def main():
         except sqlite3.IntegrityError:
             parser.error("Username already exists.")
         print(f"Created user {args.name}.")
+    elif args.command == "make-admin":
+        with database(write=True) as conn:
+            if not security.exists(conn,"users",args.name) or security.exists(conn,"disabled",args.name):
+                parser.error("Choose an existing active user.")
+            conn.execute("INSERT OR IGNORE INTO admins VALUES(?)",(args.name,))
+            security.audit(conn,"Administrator designated","server console",args.name)
     elif args.command == "enable-2fa":
         with database() as conn:
             team.enroll(conn, args.name)

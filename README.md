@@ -27,7 +27,7 @@ docker compose exec fieldbench python app.py add-user founder2
 docker compose exec fieldbench python app.py add-user founder3
 ```
 
-Replace the example usernames with your founders' names. The command prompts each founder for a password. The app listens on the server's loopback interface at port 8080. For remote access, put an HTTPS reverse proxy in front of that port and restrict it to your team's private network or VPN. Use the login page to sign in. Choose Add user there and authenticate as an existing founder to create another account. Sessions expire after eight hours. Use HTTPS or a localhost SSH tunnel.
+Replace the example usernames with your founders' names. The command prompts each founder for a password. The app listens on the server's loopback interface at port 8080. For remote access, put an HTTPS reverse proxy in front of that port and restrict it to your team's private network or VPN. Use the login page to sign in. Choose Add user there and authenticate as a designated administrator to create another account. Sessions expire after eight hours. Use HTTPS or a localhost SSH tunnel.
 
 Open the dashboard through its shared HTTPS address before sharing records. Recipients need private-network access and a workspace account. Share opens a prefilled WhatsApp message for manual sending. It also supports copying the message, with a selectable text fallback for browsers that restrict clipboard access.
 
@@ -65,9 +65,15 @@ Create flowcharts by entering one directed connection per line such as `Design -
 
 Save the meeting date, title, and notes. **Summarize notes** sends the saved text to your configured Ollama server and saves its response alongside the original. Set `OLLAMA_URL` to the service address reachable from the app and `OLLAMA_MODEL` to an installed model. Pull that model on the Ollama host first (for example, `ollama pull llama3.2`). For Compose, put both settings in an untracked `.env` file beside compose.yaml and run `docker compose up -d --build`. The default container endpoint is the Ubuntu host gateway on port 11434. Ollama must listen on an interface reachable from the container. Keep that endpoint on your private network. Notes remain saved if generation fails.
 
-### Authenticator sign-in
+### Account security
 
-Serve Lysim over HTTPS. After creating each founder account, run `docker compose exec fieldbench python app.py enable-2fa founder1`, substituting their username. The founder enters the printed setup key into their authenticator, then confirms a six-digit code. Repeat for every founder. Existing accounts keep password-only access until enrolled. After enrollment, a correct password and authenticator code unlock an eight-hour browser session. Five wrong codes temporarily block verification. To replace a lost authenticator, an administrator with server access can run the same command again. Protect database backups because they contain authenticator keys and uploaded documents.
+From the trusted server console, run `docker compose exec fieldbench python app.py make-admin founder1` with an existing active username. This step applies to upgrades and fresh installations. Members retain their workspace access. Administrators can add users from the login page and manage roles, disable accounts, reset passwords and review recent security events under **Account → Account security**.
+
+Each founder should enroll an authenticator from Account security, confirm one code, and store the eight displayed single-use recovery codes privately. Existing authenticator users can generate recovery codes there too. Sign-in accepts either an authenticator code or an unused recovery code. Once all active users are enrolled, an administrator can choose **Require 2FA for the workspace**. Future members get enrollment-only access until they confirm setup. Server operators can replace a lost authenticator with `python app.py enable-2fa USER` inside the container; this revokes sessions and recovery codes.
+
+Passwords are hashed with a unique random salt and scrypt. Successful authenticated login upgrades legacy hashes. Password resets and account disabling revoke sessions. Sign out all devices invalidates every session for your account. Login limits apply separately to the account and source, with progressive delays up to five minutes. The included Compose setup uses forwarded client addresses only for connections from the resolved Caddy container. Other deployments use the direct peer by default.
+
+The server database holds workspace records, documents, authenticator configuration, hashed recovery codes and hashed session tokens. The browser holds an eight-hour opaque Secure, HttpOnly, SameSite cookie and renders authorized API results in memory. Responses use no-store. Enrollment keys and newly generated recovery codes are briefly displayed for setup. Uploaded documents are downloaded to a user's device only when requested. Backups contain sensitive data and need private storage. Administrators see the latest 100 of up to 5,000 security events; times, account names, event types and document IDs are recorded without passwords, document bodies or codes.
 
 ### WhatsApp community
 

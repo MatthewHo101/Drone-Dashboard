@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 let actor = null;
 let adding = false;
+let admin = false;
 
 async function call(url, data) {
   const response = await fetch(url, data ? {method:"POST", headers:{"Content-Type":"application/json","X-Fieldbench":"1"}, body:JSON.stringify(data)} : {});
@@ -11,11 +12,13 @@ async function call(url, data) {
 }
 function draw() {
   $("heading").textContent = adding ? "Add a user" : actor ? "Your account" : "Sign in";
-  $("hint").textContent = adding ? (actor ? "Choose a username and a password of at least 12 characters." : "Sign in as an existing founder to add a user.") :
+  $("hint").textContent = adding ? (actor ? "Choose a username and a password of at least 12 characters." : "Sign in as an administrator to add a user.") :
     (actor ? "Signed in as " + actor : "Access your drone development workspace.");
   $("credentials").hidden = Boolean(actor);
   $("create").hidden = !(actor && adding);
   $("logout").hidden = !actor;
+  $("security").hidden = !actor;
+  $("add").hidden = Boolean(actor && !admin);
   $("open").hidden = !actor;
   $("add").textContent = adding ? "Cancel" : "Add user";
 }
@@ -39,7 +42,11 @@ bind("credentials","submit",async()=>{
     $("credentials").elements.code.focus();
     return;
   }
-  actor = (await call("/auth/status")).actor;
+  const status = await call("/auth/status");
+  actor = status.actor;
+  admin = status.admin;
+  if (status.enroll) { location.replace("/security"); return; }
+  if (!admin) adding = false;
   if (!actor) throw Error("The session cookie could not be saved. Use HTTPS or a localhost SSH tunnel.");
   $("credentials").reset();
   if (adding) draw();
@@ -57,6 +64,11 @@ bind("create","submit",async()=>{
 bind("logout","click",async()=>{await call("/auth/logout",{});location.replace("/login");});
 call("/auth/status").then(status=>{
   actor = status.actor;
+  admin = status.admin;
   draw();
-  if (status.demo) { $("add").hidden = true; $("logout").hidden = true; }
+  if (status.demo) { $("security").hidden = true; $("add").hidden = true; $("logout").hidden = true; }
 }).catch(error=>{ $("message").textContent = error.message; });
+
+window.addEventListener("pageshow", event => {
+  if (event.persisted) location.reload();
+});

@@ -368,3 +368,7 @@ request("/api/workspace").then((data) => {
 }).catch((error) => {
   workspace.innerHTML = '<p class="empty" role="alert">Could not load the workspace. ' + safe(error.message) + '</p>';
 }).finally(() => workspace.setAttribute("aria-busy", "false"));
+
+window.addEventListener("pageshow", event => {
+  if (event.persisted) location.reload();
+});

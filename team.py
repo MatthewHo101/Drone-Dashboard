@@ -43,6 +43,10 @@ def enroll(conn, name):
     if not verify_step(secret, input("Current authenticator code: ").strip(), -1):
         raise ValueError("Code did not match. Enrollment cancelled.")
     conn.execute("INSERT OR REPLACE INTO factors(name,secret) VALUES(?,?)", (name, secret))
+    import security
+    security.audit(conn,"Authenticator replaced via console","server console",name)
+    conn.execute("DELETE FROM recovery WHERE name=?", (name,))
+    conn.execute("DELETE FROM pending WHERE name=?", (name,))
     conn.execute("DELETE FROM sessions WHERE name=?", (name,))
 
 
@@ -109,11 +113,14 @@ def summarize(notes):
         raise ValueError("Summarization unavailable. Check the Ollama service and model, then retry.") from error
 
 
-def handle(handler, conn, path):
+def handle(handler, conn, path, actor):
     if path.startswith("/downloads/") and handler.command == "GET":
         doc = conn.execute("SELECT name,body FROM documents WHERE id=?", (path.split("/")[-1],)).fetchone()
         if not doc:
             raise LookupError("Document not found.")
+        import security
+        security.audit(conn,"Document downloaded",actor,path.rsplit("/",1)[-1])
+        conn.commit()
         handler.send_body(200, doc["body"], "application/octet-stream",
                           {"Content-Disposition":"attachment; filename*=UTF-8''"+quote(doc["name"],safe="")})
         return True

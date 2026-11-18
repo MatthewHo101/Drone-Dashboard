@@ -174,3 +174,7 @@ view.addEventListener("click",event=>{
 });
 window.addEventListener("hashchange",()=>{if(team)render();});
 refresh().catch(error=>feedback.textContent=error.message);
+
+window.addEventListener("pageshow", event => {
+  if (event.persisted) location.reload();
+});
