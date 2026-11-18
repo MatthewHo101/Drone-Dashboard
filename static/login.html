@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · Lysim</title><link rel="stylesheet" href="/style.css"><script src="/login.js" defer></script></head>
+<body class="login-page"><main class="login-card">
+<div class="login-brand"><span class="brand-mark" aria-hidden="true">⌘</span>Lysim</div>
+<h1 id="heading">Sign in</h1><p id="hint">Access your drone development workspace.</p>
+<form id="credentials"><label>Username<input name="name" autocomplete="username" required maxlength="40" autofocus></label>
+<label>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+<label id="factor" hidden>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}"></label>
+<button class="primary">Sign in</button></form>
+<form id="create" hidden><label>New username<input name="name" required maxlength="40" autocomplete="off"></label>
+<label>New password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>
+<label>Confirm password<input name="confirmation" type="password" required autocomplete="new-password"></label><button class="primary">Create account</button></form>
+<p id="message" role="status"></p>
+<div class="login-actions"><button class="secondary" id="add">Add user</button><button class="secondary" id="logout" hidden>Sign out</button>
+<a class="secondary" id="open" href="/" hidden>Open workspace</a></div>
+</main></body></html>

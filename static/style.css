@@ -149,3 +149,14 @@ dialog::backdrop { background: #17251f85; }
 .diagram rect { fill: #eef5e3; stroke: #7d9974; }
 .diagram text { text-anchor: middle; font: 13px system-ui; }
 .defs { position: absolute; width: 0; height: 0; }
+
+.login-page { display:grid; grid-template-columns:1fr; place-items:center; padding:20px; background:#eef2e7; }
+.login-card { width:min(430px,100%); background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:clamp(20px,5vw,34px); }
+.login-brand { display:flex; align-items:center; gap:10px; font-size:24px; font-weight:750; margin-bottom:30px; }
+.login-card h1 { font-size:35px; }
+.login-card p { margin:12px 0; color:var(--muted); line-height:1.45; }
+.login-card form, .login-card label { display:grid; gap:7px; }
+.login-card form { gap:15px; margin:22px 0; }
+.login-card input { width:100%; padding:11px; }
+.login-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.login-card [hidden] { display:none; }

@@ -1,8 +1,8 @@
-"""Run the shared Fieldbench workspace on a private network."""
+"""Run the shared Lysim workspace on a private network."""
 import team
 import argparse
-import base64
-import binascii
+import time
+from http.cookies import SimpleCookie
 from contextlib import closing, contextmanager
 from datetime import date, datetime, timedelta, timezone
 import getpass
@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS records (
 );
 """
 ASSETS = {
+    "/login": ("login.html", "text/html; charset=utf-8"),
+    "/login.js": ("login.js", "text/javascript; charset=utf-8"),
     "/team": ("team.html", "text/html; charset=utf-8"),
     "/team.js": ("team.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -251,24 +253,71 @@ class Handler(BaseHTTPRequestHandler):
     def json(self, status, payload, headers=None):
         self.send_body(status, json.dumps(payload).encode(), "application/json; charset=utf-8", headers)
 
-    def authenticate(self, conn):
+    def session_digest(self):
+        cookies = SimpleCookie()
+        cookies.load(self.headers.get("Cookie", ""))
+        token = cookies.get("lysim_session")
+        return hashlib.sha256(("lysim:" + (token.value if token else "")).encode()).hexdigest()
+
+    def auth_action(self, conn, path, actor):
+        data = team.payload(self, 4096)
         if self.server.demo:
-            return "Morgan"
-        method, _, token = self.headers.get("Authorization", "").partition(" ")
-        if method.lower() != "basic" or len(token) > 1024:
-            return None
-        try:
-            name, separator, password = base64.b64decode(token, validate=True).decode("utf-8").partition(":")
-        except (UnicodeError, binascii.Error):
-            return None
-        if not separator:
-            return None
-        user = conn.execute("SELECT * FROM users WHERE name = ?", (name,)).fetchone()
-        if user:
-            actual = password_hash(password, user["salt"])
-            if hmac.compare_digest(actual, user["password_hash"]):
-                return name
-        return None
+            self.json(403, {"error": "Account management requires the live workspace."})
+            return
+        if path == "/auth/logout":
+            conn.execute("DELETE FROM sessions WHERE token=?", (self.session_digest(),))
+            conn.commit()
+            self.json(200, {}, {"Set-Cookie": "lysim_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
+            return
+        name = data.get("name")
+        password = data.get("password")
+        if not isinstance(name, str) or not isinstance(password, str) or len(password) > 128:
+            raise ValueError("Check the username and password.")
+        if path == "/auth/register":
+            if not actor:
+                self.json(401, {"error": "Sign in with an existing founder account to add a user."})
+                return
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", name) or name != name.strip() or len(password) < 12:
+                raise ValueError("Use a 1–40 character username and a password of 12–128 characters.")
+            try:
+                add_user(name, password)
+            except sqlite3.IntegrityError:
+                raise ValueError("That username already exists.")
+            self.json(201, {"created": True})
+            return
+        conn.execute("BEGIN IMMEDIATE")
+        user = conn.execute("SELECT * FROM users WHERE name=?", (name,)).fetchone()
+        actual = password_hash(password, user["salt"] if user else bytes(16))
+        if not user or not hmac.compare_digest(actual, user["password_hash"]):
+            self.json(401, {"error": "Check your username and password."})
+            return
+        now = int(time.time())
+        factor = conn.execute("SELECT * FROM factors WHERE name=?", (name,)).fetchone()
+        if factor:
+            candidate = data.get("code", "")
+            if factor["blocked_until"] > now:
+                self.json(429, {"error": "Try again in five minutes."})
+                return
+            if not candidate:
+                self.json(200, {"needs_code": True})
+                return
+            step = None
+            if isinstance(candidate, str) and re.fullmatch(r"[0-9]{6}", candidate):
+                step = team.verify_step(factor["secret"], candidate, factor["last_step"])
+            if step is None:
+                attempts = factor["attempts"] + 1
+                conn.execute("UPDATE factors SET attempts=?,blocked_until=? WHERE name=?",
+                             (attempts % 5, now + 300 if attempts >= 5 else 0, name))
+                conn.commit()
+                self.json(403, {"error": "Invalid or already used code."})
+                return
+            conn.execute("UPDATE factors SET attempts=0,blocked_until=0,last_step=? WHERE name=?", (step,name))
+        token = secrets.token_urlsafe(32)
+        digest = hashlib.sha256(("lysim:" + token).encode()).hexdigest()
+        conn.execute("DELETE FROM sessions WHERE expires<=? OR token=?", (now,self.session_digest()))
+        conn.execute("INSERT INTO sessions VALUES(?,?,?)", (digest,name,now+28800))
+        conn.commit()
+        self.json(200, {"signed_in": True}, {"Set-Cookie": f"lysim_session={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800"})
 
     def dispatch(self):
         path = urlsplit(self.path).path
@@ -277,12 +326,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(403, {"error": "Use the demo loopback address."})
                 return
             with database() as conn:
-                actor = self.authenticate(conn)
-                if actor is None:
-                    self.json(401, {"error": "Sign in to Fieldbench."},
-                              {"WWW-Authenticate": 'Basic realm="Fieldbench", charset="UTF-8"'})
+                session = conn.execute("SELECT name FROM sessions WHERE token=? AND expires>?",
+                                       (self.session_digest(), int(time.time()))).fetchone()
+                actor = "Morgan" if self.server.demo else (session["name"] if session else None)
+                if self.command == "POST" and path in ("/auth/login", "/auth/register", "/auth/logout"):
+                    self.auth_action(conn, path, actor)
                     return
-                if team.factor_gate(self, conn, actor, path) or team.handle(self, conn, path):
+                if self.command == "GET" and path == "/auth/status":
+                    self.json(200, {"actor":actor,"demo":self.server.demo})
+                    return
+                if not actor and path not in ("/login", "/login.js", "/style.css"):
+                    if self.command == "GET" and path in ("/", "/team"):
+                        path = "/login"
+                    else:
+                        self.json(401, {"error": "Sign in to Lysim."})
+                        return
+                if team.handle(self, conn, path):
                     return
                 if self.command == "GET" and path in ASSETS:
                     name, content_type = ASSETS[path]
@@ -380,7 +439,7 @@ def main():
                     print("No accounts yet. Run 'python app.py add-user <name>' before signing in.", flush=True)
         with ThreadingHTTPServer((args.host, args.port), Handler) as server:
             server.demo = args.demo
-            print(f"Fieldbench listening at http://{args.host}:{args.port}", flush=True)
+            print(f"Lysim listening at http://{args.host}:{args.port}", flush=True)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:

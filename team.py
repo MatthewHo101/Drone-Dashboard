@@ -11,7 +11,6 @@ import struct
 import time
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from http.cookies import SimpleCookie
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError
@@ -65,49 +64,6 @@ def payload(handler, limit=65536):
     if not isinstance(data, dict):
         raise ValueError("Expected an object.")
     return data
-
-
-def factor_gate(handler, conn, actor, path):
-    factor = conn.execute("SELECT * FROM factors WHERE name=?", (actor,)).fetchone()
-    if not factor:
-        return False
-    cookies = SimpleCookie()
-    cookies.load(handler.headers.get("Cookie", ""))
-    token = cookies.get("fieldbench_session")
-    now = int(time.time())
-    if token and conn.execute("SELECT 1 FROM sessions WHERE name=? AND token=? AND expires>?",
-        (actor, hashlib.sha256(token.value.encode()).hexdigest(), now)).fetchone():
-        return False
-    if path == "/verify" and handler.command == "POST":
-        candidate = payload(handler).get("code")
-        if not isinstance(candidate, str) or not re.fullmatch(r"[0-9]{6}", candidate):
-            raise ValueError("Enter six digits.")
-        conn.execute("BEGIN IMMEDIATE")
-        factor = conn.execute("SELECT * FROM factors WHERE name=?", (actor,)).fetchone()
-        if factor["blocked_until"] > now:
-            handler.json(429, {"error": "Try again in five minutes."})
-            return True
-        step = verify_step(factor["secret"], candidate, factor["last_step"])
-        if step is None:
-            attempts = factor["attempts"] + 1
-            conn.execute("UPDATE factors SET attempts=?,blocked_until=? WHERE name=?",
-                         (attempts % 5, now + 300 if attempts >= 5 else 0, actor))
-            conn.commit()
-            handler.json(403, {"error": "Invalid or already used code."})
-            return True
-        token = secrets.token_urlsafe(32)
-        conn.execute("UPDATE factors SET attempts=0,blocked_until=0,last_step=? WHERE name=?", (step, actor))
-        conn.execute("DELETE FROM sessions WHERE expires<=?", (now,))
-        conn.execute("INSERT INTO sessions VALUES(?,?,?)", (hashlib.sha256(token.encode()).hexdigest(), actor, now+28800))
-        conn.commit()
-        handler.json(200, {}, {"Set-Cookie":f"fieldbench_session={token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800"})
-    elif path in ("/", "/team", "/verify.js", "/style.css") and handler.command == "GET":
-        from pathlib import Path
-        filename, mime = {"/verify.js": ("verify.js","text/javascript"), "/style.css": ("style.css","text/css")}.get(path, ("verify.html","text/html"))
-        handler.send_body(200, (Path(__file__).parent / "static" / filename).read_bytes(), mime+"; charset=utf-8")
-    else:
-        handler.json(403, {"error": "Reload and enter your authenticator code."})
-    return True
 
 
 def string(data, name, maximum=160, optional=False):

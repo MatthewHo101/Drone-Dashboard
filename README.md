@@ -1,6 +1,6 @@
-# Fieldbench
+# Lysim
 
-Fieldbench is an internal drone-development dashboard for a small founding team. It tracks airframe revisions, bench and flight tests, issues, and part orders in a shared SQLite database.
+Lysim is an internal drone-development dashboard for a small founding team. It tracks airframe revisions, bench and flight tests, issues, and part orders in a shared SQLite database.
 
 ## Try the demo
 
@@ -27,7 +27,7 @@ docker compose exec fieldbench python app.py add-user founder2
 docker compose exec fieldbench python app.py add-user founder3
 ```
 
-Replace the example usernames with your founders' names. The command prompts each founder for a password. The app listens on the server's loopback interface at port 8080. For remote access, put an HTTPS reverse proxy in front of that port and restrict it to your team's private network or VPN. HTTP Basic Auth sends credentials with each request, so use HTTPS for remote access and leave the Compose port on loopback.
+Replace the example usernames with your founders' names. The command prompts each founder for a password. The app listens on the server's loopback interface at port 8080. For remote access, put an HTTPS reverse proxy in front of that port and restrict it to your team's private network or VPN. Use the login page to sign in. Choose Add user there and authenticate as an existing founder to create another account. Sessions expire after eight hours. Use HTTPS or a localhost SSH tunnel.
 
 Open the dashboard through its shared HTTPS address before sharing records. Recipients need private-network access and a workspace account. Share opens a prefilled WhatsApp message for manual sending. It also supports copying the message, with a selectable text fallback for browsers that restrict clipboard access.
 
@@ -57,7 +57,7 @@ All signed-in founders can view and edit records. The app records the last edito
 
 Choose **Team workspace** in the sidebar. Use the project board to assign tasks to founders, group them by project, set due dates, and move cards through four stages. Existing issues appear on this board. Dated tasks and meetings offer **Add to Google Calendar**. Google opens a prefilled all-day event for the founder to review and save. Later dashboard edits require a corresponding calendar edit.
 
-Upload documents or invoices up to 5 MiB each. Choose a task during upload to show the file on its card. Documents and invoices are stored in the SQLite database and included in its backup. For an order, enter the invoice reference, currency, quantity, unit price, tax and shipping. For a mixed-item invoice, use quantity one and its pre-tax subtotal as the unit price. Fieldbench calculates the total and sums active orders separately by currency. Invoice values are entered manually. Cancelled orders stay in the history.
+Upload documents or invoices up to 5 MiB each. Choose a task during upload to show the file on its card. Documents and invoices are stored in the SQLite database and included in its backup. For an order, enter the invoice reference, currency, quantity, unit price, tax and shipping. For a mixed-item invoice, use quantity one and its pre-tax subtotal as the unit price. Lysim calculates the total and sums active orders separately by currency. Invoice values are entered manually. Cancelled orders stay in the history.
 
 Create flowcharts by entering one directed connection per line such as `Design -> Review` and `Review -> Test`. Reuse a node name to create a branch or cycle.
 
@@ -67,7 +67,7 @@ Save the meeting date, title, and notes. **Summarize notes** sends the saved tex
 
 ### Authenticator sign-in
 
-Serve Fieldbench over HTTPS. After creating each founder account, run `docker compose exec fieldbench python app.py enable-2fa founder1`, substituting their username. The founder enters the printed setup key into their authenticator, then confirms a six-digit code. Repeat for every founder. Existing accounts keep password-only access until enrolled. After enrollment, a correct password and authenticator code unlock an eight-hour browser session. Five wrong codes temporarily block verification. To replace a lost authenticator, an administrator with server access can run the same command again. Protect database backups because they contain authenticator keys and uploaded documents.
+Serve Lysim over HTTPS. After creating each founder account, run `docker compose exec fieldbench python app.py enable-2fa founder1`, substituting their username. The founder enters the printed setup key into their authenticator, then confirms a six-digit code. Repeat for every founder. Existing accounts keep password-only access until enrolled. After enrollment, a correct password and authenticator code unlock an eight-hour browser session. Five wrong codes temporarily block verification. To replace a lost authenticator, an administrator with server access can run the same command again. Protect database backups because they contain authenticator keys and uploaded documents.
 
 ### WhatsApp community
 
