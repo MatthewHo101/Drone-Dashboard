@@ -49,20 +49,24 @@ function commercialOverview() {
   const summaries=currencies.map(currency=>{
     const leads=open.filter(o=>o.currency===currency);
     const sales=team.sales.filter(s=>s.currency===currency&&s.status!=="Cancelled");
-    if(!leads.length&&!sales.length)return "";
+    if(!leads.length&&!sales.length && (currency!==currencies[0] || open.length || team.sales.some(s=>s.status!=="Cancelled")))return "";
     const pipeline=leads.reduce((s,o)=>s+BigInt(o.quote),0n);
     const estimated=leads.reduce((s,o)=>s+BigInt(o.quote)-BigInt(o.estimate),0n);
+    let revenue=0n, costs=0n;
     let profit=0n,deliveredRevenue=0n,balance=0n,unpriced=0;
     for(const sale of sales){
       const t=saleTotals(sale);
       balance+=t.balance>0n?t.balance:0n;
       if(sale.status==="Delivered"){
+        revenue+=t.revenue;
+        costs+=t.costs;
         if(t.complete){ profit+=t.profit; deliveredRevenue+=t.revenue; } else unpriced++;
       }
     }
-    return panel(currency,'<dl class="details">'+[
-      ["Open pipeline",cash(pipeline)],["Estimated pipeline profit",cash(estimated)],
-      ["Gross profit on costed deliveries",cash(profit)],["Delivered gross margin",margin(profit,deliveredRevenue)],
+    return panel(currency,'<dl class="delivery-totals"><div><dt>Delivered revenue</dt><dd>'+cash(revenue)+
+      '</dd></div><div><dt>Recorded delivery costs</dt><dd>'+cash(costs)+'</dd></div></dl><dl class="details">'+[
+      ["Open pipeline",cash(pipeline)],["Estimated pipeline costs",cash(pipeline-estimated)],["Estimated pipeline profit",cash(estimated)],
+      ["Gross profit on costed deliveries",cash(profit)],["Gross margin on costed deliveries",margin(profit,deliveredRevenue)],
       ["Outstanding order balances",cash(balance)],["Deliveries missing item costs",unpriced]
     ].map(([label,value])=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+value+'</dd></div>').join("")+'</dl>');
   }).join("");

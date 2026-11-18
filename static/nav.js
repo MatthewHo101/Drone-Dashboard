@@ -1,7 +1,7 @@
 "use strict";
 const navigation = document.querySelector(".sidebar nav");
 navigation.innerHTML = '<a href="/#overview">Home</a>'+
-  '<details open><summary>Engineering</summary><a href="/team#board">Project board</a><a href="/#builds">Builds</a><a href="/#tests">Tests</a><a href="/#issues">Issues</a><a href="/#parts">Parts</a><a href="/team#charts">Flowcharts</a></details>'+
+  '<details open><summary>Engineering</summary><a href="/team#board">Tasks</a><a href="/#issues">Issues</a><a href="/team#charts">Flowcharts</a></details>'+
   '<details open><summary>Commercial</summary><a href="/team#commercial">Commercial overview</a><a href="/team#sales">Sales orders</a></details>'+
   '<details open><summary>Shared</summary><a href="/team#orders">Purchases</a><a href="/team#documents">Documents</a><a href="/team#meetings">Meetings</a></details>'+
   '<a href="/security">Account</a>';

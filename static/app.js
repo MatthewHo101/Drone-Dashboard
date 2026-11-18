@@ -88,41 +88,21 @@ function panel(title, kind, items, empty) {
 }
 
 function overview() {
-  const builds = records("builds").filter((record) => record.status !== "Retired");
   const issues = records("issues").filter((record) => record.status !== "Done");
   const urgent = issues.filter((record) => record.status === "Blocked" || (record.record_date && record.record_date < today()));
-  const planned = records("tests").filter((record) => record.status === "Planned")
-    .sort((a, b) => a.record_date.localeCompare(b.record_date));
-  const recent = records("tests").filter((record) => record.status !== "Planned")
-    .sort((a, b) => b.record_date.localeCompare(a.record_date));
-  const ordered = records("parts").filter((record) => record.status === "Ordered");
   const leadRows = leads => leads.map(o=>'<a class="record-row" href="/team#commercial/'+o.id+'"><span class="row-title"><strong>'+safe(o.customer)+' · '+safe(o.title)+'</strong><small>'+safe(o.action)+' · '+safe(o.due||"No follow-up date")+'</small></span></a>').join("");
   const myIssues = issues.filter(i=>i.owner===state.actor).sort((a,b)=>(a.record_date||"9999").localeCompare(b.record_date||"9999"));
-  const myTests = planned.filter(t=>t.owner===state.actor);
   const mine = state.leads.filter(o=>o.owner===state.actor);
   const myWork = '<section class="panel"><div class="panel-head"><h2>My work</h2></div>'+
-    (myIssues.length||myTests.length?list([...myIssues,...myTests],""):"")+leadRows(mine)+
-    (!myIssues.length&&!myTests.length&&!mine.length?'<p class="empty">No assigned work.</p>':'')+'</section>';
+    (myIssues.length?list(myIssues,""):"")+leadRows(mine)+
+    (!myIssues.length&&!mine.length?'<p class="empty">No assigned work.</p>':'')+'</section>';
   const commercial = '<section class="panel"><div class="panel-head"><h2>Commercial follow-ups</h2><a href="/team#commercial">Open pipeline ↗</a></div>'+
     (leadRows(state.leads.slice(0,4))||'<p class="empty">No open opportunities.</p>')+'</section>';
   const meeting=state.latest_customer_meeting;
   const learning=meeting?'<section class="panel"><div class="panel-head"><h2>Latest customer meeting</h2><a href="/team#meetings">Open meetings ↗</a></div><div class="entries"><strong>'+safe(meeting.customer)+' · '+safe(meeting.title)+'</strong><p>'+safe(meeting.excerpt)+'</p><small>'+safe(meeting.day)+'</small></div></section>':"";
-  const metrics = [
-    ["builds", "Active builds", builds.length, "◇"],
-    ["tests", "Planned tests", planned.length, "⌁"],
-    ["issues", "Open issues", issues.length, "◎"],
-    ["parts", "Parts on order", ordered.length, "▤"],
-  ];
-  return '<header class="intro"><div><h1>Home</h1></div>' +
-    '<button class="primary" data-new="tests">+ Log a test</button></header>' +
-    myWork + '<div class="metrics">' + metrics.map(([kind, label, count, icon]) => (
-      '<a class="metric" href="#' + kind + '"><span class="metric-icon" aria-hidden="true">' + icon +
-      '</span><span class="metric-label">' + label + '</span><strong>' + count + '</strong><span class="metric-arrow" aria-hidden="true">↗</span></a>'
-    )).join("") + '</div>' +
-    '<div class="panel-grid">' + panel("Engineering blockers", "issues", urgent, "No blocked or overdue issues.") + commercial +
-    panel("Recent test results", "tests", recent.slice(0, 4), "Completed test results will appear here.") +
-    panel("Active builds", "builds", builds.slice(0, 4), "Add a build to start recording tests.") +
-    panel("Upcoming tests", "tests", planned.slice(0, 4), "No tests planned.") + learning + '</div>';
+  return '<header class="intro"><h1>Home</h1><a class="primary" href="/team#board">Open Tasks</a></header>' +
+    myWork + '<div class="panel-grid">' + panel("Engineering blockers", "issues", urgent, "No blocked or overdue issues.") +
+    commercial + learning + '</div>';
 }
 
 function section(kind) {
@@ -155,34 +135,13 @@ function field(name, label, value, { type = "text", required = false, max = 140,
 function formFields(kind, record) {
   const details = record.details || {};
   const config = sections[kind];
-  const buildChoices = ["", ...records("builds").map((build) => [build.id, build.title + " · " + buildLabel(build)])];
   let fields =
     field("title", "Title", record.title, { required: true, wide: true }) +
     field("status", "Status", record.status, { choices: config.statuses, required: true }) +
     field("owner", "Owner", record.owner || state.actor, { choices: state.users.map(name => [name,person(name)]), required: true }) +
     field("record_date", config.date, record.record_date ?? (kind === "tests" ? today() : ""), { type: "date", required: kind === "tests" });
-  if (kind !== "builds") {
-    fields += field("build_id", "Build revision", record.build_id, { choices: buildChoices, required: kind === "tests" });
-  }
-  if (kind === "builds") {
-    fields += field("airframe", "Airframe ID", details.airframe, { max: 80, required: true }) +
-      field("revision", "Revision", details.revision, { max: 40, required: true }) +
-      field("firmware", "Firmware revision", details.firmware, { max: 200, wide: true });
-  }
-  if (kind === "tests") {
-    fields += field("test_type", "Test type", details.test_type, { choices: ["Bench", "Flight"], required: true }) +
-      field("expected", "Objective and expected result", details.expected, { type: "textarea", max: 2000, required: true, wide: true }) +
-      field("actual", "Actual result", details.actual, { type: "textarea", max: 2000, wide: true });
-  }
-  if (kind === "issues") {
-    fields += field("project", "Project", details.project, { max: 100 }) + field("test_id", "Linked test", record.test_id, {
-      choices: ["", ...records("tests").map((test) => [test.id, test.title + " · " + buildLabel(getRecord(test.build_id))])],
-    }) + field("next_action", "Next action", details.next_action, { max: 300, wide: true });
-  } else {
-    const label = { builds: "CAD, parts list, or revision notes link", tests: "Logs or photos link", parts: "Product or order link" }[kind];
-    if (kind === "parts") fields += field("supplier", "Supplier", details.supplier, { max: 100, wide: true });
-    fields += field("link", label, details.link, { type: "url", max: 600, wide: true });
-  }
+  fields += field("project", "Project", details.project, { max: 100 }) +
+    field("next_action", "Next action", details.next_action, { max: 300, wide: true });
   return fields + field("notes", kind === "builds" ? "Configuration and changes" : "Notes", record.notes,
     { type: "textarea", max: 2000, wide: true });
 }
@@ -203,17 +162,11 @@ function editor(kind, record = {}) {
     '<button class="primary" type="submit">Save ' + sections[kind].singular + '</button></div></form>');
   const form = dialog.querySelector("form");
   form.querySelector('[name="title"]').focus();
-  if (kind === "issues") {
-    form.elements.test_id.addEventListener("change", () => {
-      const test = getRecord(Number(form.elements.test_id.value));
-      if (test) form.elements.build_id.value = test.build_id;
-    });
-  }
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(form));
     for (const key of ["build_id", "test_id"]) {
-      if (data[key]) data[key] = Number(data[key]);
+      if (record[key]) data[key] = record[key];
     }
     const submit = form.querySelector('[type="submit"]');
     submit.disabled = true;
@@ -256,7 +209,6 @@ function detail(record) {
   showDialog(record.title,
     '<dl class="details">' + item("Status", badge(record.status)) + item("Owner", safe(person(record.owner))) +
     item(config.date, record.record_date ? safe(formatDate(record.record_date)) : "") +
-    item("Build", linked(build, build ? build.title + " · " + buildLabel(build) : "")) + item("Test", linked(test)) +
     Object.entries(labels).map(([key, label]) => item(label, safe(record.details[key]))).join("") +
     item("Notes", safe(record.notes)) +
     item("Reference", record.details.link ?
@@ -294,7 +246,7 @@ function shareRecord(record) {
 
 function route() {
   const [sectionName, id] = location.hash.slice(1).split("/");
-  return { kind: Object.hasOwn(sections, sectionName) ? sectionName : "overview", id: Number(id) || null };
+  return sectionName === "issues" ? { kind: "issues", id: Number(id) || null } : { kind: "overview", id: null };
 }
 
 function render() {

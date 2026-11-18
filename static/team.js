@@ -119,7 +119,7 @@ function orders() {
     taskSelect()+input("file","Invoice · up to 5 MiB","file"))+
     select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+select("purchaseProject","Filter by project",[["","All projects"],...new Set(team.orders.map(o=>o.project).filter(Boolean))],purchaseProject)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
-const pages={board:["Project board",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
+const pages={board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
   const [key,suffix]=location.hash.slice(1).split("/");
   if(key==="board") {try {project=decodeURIComponent(suffix||"");} catch {project="";}}

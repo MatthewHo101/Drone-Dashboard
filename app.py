@@ -56,6 +56,7 @@ ASSETS = {
     "/team.js": ("team.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/logo.png": ("logo.png", "image/png"),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
 }
 
@@ -375,7 +376,7 @@ class Handler(BaseHTTPRequestHandler):
                 session = self.active_session(conn)
                 actor = "Morgan" if self.server.demo else (session["name"] if session else None)
                 limited = bool(actor and not self.server.demo and security.mandatory(conn) and not security.exists(conn,"factors",actor))
-                if limited and path not in ("/security","/security.js","/nav.js","/style.css","/auth/status","/auth/logout","/account/settings","/account/start","/account/confirm","/account/logout-all"):
+                if limited and path not in ("/security","/security.js","/nav.js","/logo.png","/style.css","/auth/status","/auth/logout","/account/settings","/account/start","/account/confirm","/account/logout-all"):
                     if self.command=="GET" and path in ("/","/login","/team"):
                         self.send_body(303,b"","text/plain",{"Location":"/security"})
                     else:
@@ -387,7 +388,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.command == "GET" and path == "/auth/status":
                     self.json(200, {"actor":actor,"display":security.label(conn,actor),"demo":self.server.demo,"admin":bool(actor and security.exists(conn,"admins",actor)),"enroll":limited})
                     return
-                if not actor and path not in ("/login", "/login.js", "/style.css"):
+                if not actor and path not in ("/login", "/login.js", "/logo.png", "/style.css"):
                     if self.command == "GET" and path in ("/", "/team", "/security"):
                         path = "/login"
                     else:

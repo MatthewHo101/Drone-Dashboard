@@ -21,7 +21,7 @@ button:disabled { cursor: wait; opacity: .6; }
 .skip:focus { transform: none; }
 .sidebar { background: var(--dark); color: #eff6e6; position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; padding: 28px 18px 20px; }
 .brand { display: flex; align-items: center; gap: 11px; margin: 0 8px 42px; font-size: 22px; font-weight: 760; letter-spacing: -.06em; }
-.brand-mark { line-height:1; letter-spacing:0; text-align:center; font-family:system-ui,sans-serif; font-size: 26px; border-radius: 11px; display: grid; place-items: center; width: 41px; height: 41px; background: var(--accent); color: var(--dark); }
+.brand-mark { width:41px; height:41px; object-fit:contain; border-radius:11px; flex:none; }
 .brand small, .identity small { display: block; color: #bdc9bc; font-size: 10px; font-weight: 650; letter-spacing: .15em; margin-top: 3px; }
 nav { display: grid; gap: 5px; }
 nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 44px; border-radius: 8px; color: #d7e1d5; font-size: 14px; font-weight: 600; }
@@ -171,3 +171,7 @@ dialog::backdrop { background: #17251f85; }
 .attachment { margin:10px 0; }
 #workspace > .panel + .metrics, #view > .panel-grid { margin:16px 0; }
 @media(max-width:740px){ .sidebar nav { align-items:flex-start; } .sidebar nav details { flex-shrink:0; } }
+
+.delivery-totals { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:0 16px; }
+.delivery-totals div { background:var(--surface,#f0f4e9); padding:12px; border-radius:8px; }
+.delivery-totals dd { margin:4px 0 0; font-size:clamp(1.25rem,2vw,2rem); font-weight:700; overflow-wrap:anywhere; }
