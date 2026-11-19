@@ -43,6 +43,12 @@ class FlowCanvas extends HTMLElement {
     }
     this.note(this.editable ? "Add a shape, drag it into place, or drag the background to pan." : "Drag to pan. Use the wheel or zoom buttons to change scale.");
     this.fit();
+    if(this.hasAttribute("thumbnail")){
+      this.querySelector(".flow-tools").remove();
+      this.querySelector("small").remove();
+      this.svg.removeAttribute("tabindex");
+      return;
+    }
     this.onclick = e => {
       const tool = e.target.closest("[data-tool]")?.dataset.tool;
       if (tool) this.tool(tool);

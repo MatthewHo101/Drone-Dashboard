@@ -334,3 +334,12 @@ dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}
 .document-result[hidden] {display:none;}
 .delete-docs {border:1px solid #cfa9a5;background:white;color:#852e27;border-radius:6px;padding:6px 10px;}
 .delete-docs:disabled {opacity:.5;}
+.task-main,.meeting-side {display:grid;align-content:start;min-width:0;gap:10px;}
+.task-main > .workspace-fold {margin:0;}
+.work-rows .record-row {padding-block:5px;align-items:center;}
+.work-rows .record-row small {margin:0;}
+.task-chart {display:block;padding:5px;color:inherit;text-decoration:none;}
+.task-chart:hover strong,.task-chart:focus-visible strong {text-decoration:underline;}
+.task-chart flow-canvas {margin:0 0 4px;pointer-events:none;}
+.task-chart .flow-surface {display:block;width:100%;height:86px;}
+@media(max-width:560px){.work-rows .record-row {grid-template-columns:1fr;gap:2px;}}

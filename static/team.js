@@ -60,13 +60,13 @@ function taskAssociation(kind,id,current=resourceTask(kind,id)){
   return kind==="charts"?button+link:link+button;
 }
 function relatedRecords(task){
-  const sources={notes:[team.notes,"Note"],orders:[team.orders,"Purchase"],sales:[team.sales,"Sales order"],commercial:[team.opportunities,"Opportunity"],charts:[team.charts,"Flowchart"]};
-  const rows=team.resource_links.filter(l=>l.task===task).map(l=>{
+  const sources={notes:[team.notes,"Note"],orders:[team.orders,"Purchase"],sales:[team.sales,"Sales order"],commercial:[team.opportunities,"Opportunity"]};
+  const rows=team.resource_links.filter(l=>l.task===task && Object.hasOwn(sources,l.kind)).map(l=>{
     const [records,label]=sources[l.kind];
     const record=records.find(r=>r.id===l.resource);
     return record?recordRow("#"+l.kind+"/"+record.id,(l.kind==="notes"?noteTitle(record):record.title||record.invoice),label):"";
   }).join("");
-  return rows?panel("Linked records",rows):"";
+  return fold("task-records-"+task,"Linked records",rows || '<p class="empty">No linked records.</p>');
 }
 function calendar(title,day,notes="") {
   if (!day) return "";
@@ -122,22 +122,35 @@ function board(){
     '<form class="form-grid" data-op="task">'+taskFields()+'<p class="wide form-error" role="alert"></p><button class="primary">Create task</button></form></dialog>'+
     '<div class="task-stack">'+stages.map(boardGroup).join("")+'</div>';
 }
+function workUpdateDetail(){
+  const update=team.task_updates.find(u=>String(u.id)===location.hash.split("/")[1]);
+  if(!update)return '<a href="#board">← Tasks</a><p class="empty">Work update unavailable.</p>';
+  const task=tasks().find(t=>t.id===update.task);
+  const file=team.documents.find(d=>d.id===update.document);
+  return '<a class="text-link" href="#task/'+update.task+'">← '+esc(task?.title || "Task details")+'</a>'+
+    panel("Work update",'<strong>'+esc(person(update.author))+'</strong><p>Work date · '+esc(update.work_date || update.posted_at.slice(0,10))+
+      '</p><small>Posted '+esc(new Date(update.posted_at).toLocaleString())+'</small><pre>'+esc(update.body)+'</pre>'+
+      (file?documentCard(file):""));
+}
+function taskFlowcharts(id){
+  const linked=new Set(team.resource_links.filter(l=>l.kind==="charts" && l.task===id).map(l=>l.resource));
+  const previews=team.charts.filter(c=>linked.has(c.id)).map(c=>
+    '<a class="task-chart" href="#charts/'+c.id+'"><flow-canvas thumbnail aria-hidden="true" data-chart="'+c.id+'"></flow-canvas><strong>'+esc(c.title)+'</strong></a>').join("");
+  return fold("task-charts-"+id,"Flowcharts",previews || '<p class="empty">No linked flowcharts.</p>');
+}
 function taskDetail() {
   const task=tasks().find(t=>String(t.id)===location.hash.split("/")[1]);
   const back='<a class="text-link" href="#board">← All tasks</a>';
   if(!task)return back+'<p class="empty">Task unavailable.</p>';
   const updates=team.task_updates.filter(u=>u.task===task.id);
   const docs=team.documents.filter(d=>d.task===task.id);
-  const files=new Map(docs.map(doc=>[doc.id,doc]));
-  const history=updates.map(update=>{
-    const doc=files.get(update.document);
-    files.delete(update.document);
-    const day=update.work_date ? '<p>Work date · <time>'+esc(update.work_date)+'</time></p>' : "";
-    return '<article><strong>'+esc(person(update.author))+'</strong>'+day+
-      '<small>Posted <time datetime="'+esc(update.posted_at)+'">'+esc(new Date(update.posted_at).toLocaleString())+
-      '</time></small><pre>'+esc(update.body)+'</pre>'+(doc?attachment(doc):"")+'</article>';
+  const attached=new Set(updates.map(u=>u.document));
+  const history=updates.map(u=>{
+    const summary=u.body.trim().replace(/\s+/g," ") || "Work update";
+    return recordRow("#work-update/"+u.id,summary.length>90?summary.slice(0,89)+"…":summary,
+      [u.work_date || u.posted_at.slice(0,10),person(u.author)].join(" · "));
   }).join("");
-  const otherFiles=[...files.values()].map(doc=>'<article>Attached to task'+attachment(doc)+'</article>').join("");
+  const otherFiles=docs.filter(d=>!attached.has(d.id)).map(d=>recordRow("#documents/"+d.id,d.name,"Task attachment")).join("");
   const updateFields=hiddenId("task",task.id)+valueInput("work_date","Work date",dateNow(),"date")+
     input("file","Document (optional, up to 20 MiB)","file","")+
     input("body","What was done?","area",'required maxlength="4000"');
@@ -147,7 +160,7 @@ function taskDetail() {
     }).join("")+(team.meetings.length?form("link-meeting","Link workspace meeting",hiddenId("task",task.id)+
       select("meeting","Meeting",team.meetings.map(m=>[m.id,m.day+" · "+m.title]))):"")+(team.calendar_account?form("meeting-search","Link Google meeting",input("query","Search upcoming meetings","search","")+hiddenId("task",task.id))+
       '<div id="meeting-results"></div>':'<a href="/security">Connect Google Calendar to link a meeting</a>'));
-  return '<div class="task-detail">'+back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
+  return '<div class="task-detail">'+back+'<div class="task-main">'+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
     '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
     '<p>Liable people · '+esc((task.details.liable||[]).map(person).join(", ")||"None")+'</p>'+
     (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
@@ -158,8 +171,9 @@ function taskDetail() {
     (task.record_date?"":'<small>The event will use today unless you set a due date.</small>')+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
     encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+
-    '<aside class="meeting-side">'+linkedMeetings+'</aside>'+relatedRecords(task.id)+panel("Work history",form("task-update","Add work update",updateFields)+
-      (history+otherFiles||'<p>No work updates yet.</p>'))+'</div>';
+    fold("task-history-"+task.id,"Work history ("+updates.length+")",form("task-update","Add work update",updateFields)+
+      '<div class="work-rows">'+(history+otherFiles || '<p class="empty">No work updates yet.</p>')+'</div>',true)+
+    '</div><aside class="meeting-side">'+linkedMeetings+taskFlowcharts(task.id)+relatedRecords(task.id)+'</aside></div>';
 }
 function download(doc) {
   if(!doc)return "";
@@ -389,7 +403,7 @@ function orders() {
     taskSelect()+input("file","Invoice · up to 20 MiB","file"))+
     select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
-const pages={notes:["Notes",notes],finances:["Finances",financeDetails],task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
+const pages={"work-update":["Work update details",workUpdateDetail],notes:["Notes",notes],finances:["Finances",financeDetails],task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
   const [key]=location.hash.slice(1).split("/");
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;

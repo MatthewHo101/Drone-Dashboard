@@ -32,7 +32,7 @@ document.querySelector(".topbar").prepend(goBack);
 function highlightNavigation() {
   const page = location.hash.split("/")[0] || (location.pathname==="/team"?"#board":location.pathname==="/"?"#overview":"");
   for(const link of navigation.querySelectorAll("a")){
-    if(link.pathname===location.pathname && (link.hash===page || (page==="#task" && link.hash==="#board"))) {
+    if(link.pathname===location.pathname && (link.hash===page || (["#task","#work-update"].includes(page) && link.hash==="#board"))) {
       link.setAttribute("aria-current","page");
       const group=link.closest("details");
       if(group) group.open=true;
