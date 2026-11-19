@@ -46,11 +46,10 @@ function commercialOverview() {
   const report=team.overview;
   const values=report.totals[displayCurrency];
   const format=value=>value===null?"Rate unavailable":esc(displayCurrency)+" "+cash(value);
-  const financeUrl="#finances/"+displayCurrency;
-  const summaries='<section class="panel"><div class="panel-head"><h2><a href="'+financeUrl+'" target="_blank" rel="noopener">Finances ↗</a></h2>'+
-    '<label class="sort-chip currency-chip">Display currency <select name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label>'+'</div><a class="finance-link" href="'+financeUrl+'" target="_blank" rel="noopener"><dl class="delivery-totals">'+
-    '<div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl></a>'+
-    (report.rate_day?'<small class="rate-date">Exchange rates · '+esc(report.rate_day)+'</small>':"")+'</section>';
+  const summaries=fold("finances","Finances",
+    '<label class="sort-chip currency-chip">Display currency <select name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label>'+
+    '<dl class="delivery-totals"><div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl>'+
+    fold("finance-calculations","Calculation details",financeDetails(displayCurrency)),true);
   const selected=Number(location.hash.split("/")[1]);
   const cards=team.opportunities.filter(o=>!selected||o.id===selected).map(o=>{
     const sale=linked.get(o.id);
@@ -62,12 +61,13 @@ function commercialOverview() {
       taskAssociation("commercial",o.id)+actions);
   }).join("");
   if(selected)return '<a class="text-link" href="#commercial">← Pipeline</a>'+(cards||"<p>Opportunity unavailable.</p>");
-  return '<div class="panel-grid">'+summaries+'</div>'+form("lead","New opportunity",leadFields()) +fold("pipeline","Pipeline ("+team.opportunities.length+")",
+  return summaries+form("lead","New opportunity",leadFields()) +fold("pipeline","Pipeline ("+team.opportunities.length+")",
     cards||'<p class="empty">No opportunities yet.</p>',true);
 }
-function financeDetails(){
+function financeDetails(currency){
   const report=team.overview;
-  const code=currencies.includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"GBP";
+  const requested=currency||location.hash.split("/")[1];
+  const code=currencies.includes(requested)?requested:"GBP";
   const amounts=report.totals[code];
   return (report.rate_day?'<p>Exchange rates · '+esc(report.rate_day)+'</p>':"")+["Revenue","Cost"].map(kind=>{
     const grouped=new Map();

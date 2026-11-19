@@ -286,7 +286,7 @@ function diagram(source) {
 function charts() {
   return form("chart","Create a flowchart",taskSelect()+input("title","Chart name")+input("edges","Connections, one per line","area",'required maxlength="4000" placeholder="Design -> Review&#10;Review -> Test"'))+
     '<svg class="defs" aria-hidden="true"><defs><marker id="arrow" orient="auto" markerWidth="8" markerHeight="8" refX="7" refY="4"><polygon points="0,0 8,4 0,8"/></marker></defs></svg>'+
-    team.charts.filter(c=>!location.hash.split("/")[1]||String(c.id)===location.hash.split("/")[1]).map(c=>panel(c.title,taskAssociation("charts",c.id)+diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>')).join("");
+    team.charts.filter(c=>!location.hash.split("/")[1]||String(c.id)===location.hash.split("/")[1]).map(c=>fold("chart-"+c.id,c.title,taskAssociation("charts",c.id)+diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>',Boolean(location.hash.split("/")[1]))).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
