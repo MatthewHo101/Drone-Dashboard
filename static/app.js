@@ -75,7 +75,7 @@ function overview() {
   const issues = records("issues").filter((record) => record.status !== "Done");
   const urgent = issues.filter((record) => (record.record_date && record.record_date < today()));
   const leadRows = leads => leads.map(o=>'<a class="record-row" href="/team#commercial/'+o.id+'"><span class="row-title"><strong>'+safe(o.customer)+' · '+safe(o.title)+'</strong><small>'+safe(o.action)+' · '+safe(o.due||"No follow-up date")+'</small></span></a>').join("");
-  const myIssues = issues.filter(i=>i.owner===state.actor).sort((a,b)=>(a.record_date||"9999").localeCompare(b.record_date||"9999"));
+  const myIssues = issues.filter(i=>(i.owner===state.actor||i.details.liable?.includes(state.actor))).sort((a,b)=>(a.record_date||"9999").localeCompare(b.record_date||"9999"));
   const mine = state.leads.filter(o=>o.owner===state.actor);
   const myWork = '<section class="panel"><div class="panel-head"><h2>My work</h2></div>'+
     (myIssues.length?list(myIssues,""):"")+leadRows(mine)+

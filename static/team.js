@@ -42,17 +42,45 @@ function person(name) {
 function taskFields(task={details:{}}) {
   return valueInput("title","Task",task.title)+
     select("owner","Owner",workspace.users.map(n=>[n,person(n)]),task.owner||workspace.actor)+
+    '<fieldset class="liable wide"><legend>Liable people</legend>'+workspace.users.map(n=>
+      '<label><input type="checkbox" name="liable" value="'+esc(n)+'" '+((task.details.liable||[]).includes(n)?"checked ":"")+
+      (n===(task.owner||workspace.actor)?"disabled":"")+'>'+esc(person(n))+'</label>').join("")+'</fieldset>'+
     valueInput("record_date","Due date",task.record_date,"date",false)+
     select("priority","Priority",["High","Normal","Low"],task.details.priority||"Normal")+
     valueInput("next_action","Next action (optional)",task.details.next_action,"text",false);
 }
-function board() {
-  const items=tasks();
-  return form("task","Create task",taskFields())+'<div class="task-stack">'+stages.map(stage=>
-    panel(stage,items.filter(t=>t.status===stage).map(t=>
-      '<article><a class="task-card" href="#task/'+t.id+'"><strong>'+esc(t.title)+'</strong><small>'+
-      esc([person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small></a></article>'
-    ).join("")||"<small>No tasks</small>")).join("")+'</div>';
+const boardState={Open:{expanded:true,sort:"Due date"},Done:{expanded:false,sort:"Due date"}};
+function taskRow(task){
+  const priority=task.details.priority||"Normal";
+  const people=(task.details.liable||[]).map(person).join(", ")||"None";
+  const files=team.documents.filter(doc=>doc.task===task.id).map(doc=>{
+    const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
+    return '<a href="#documents/'+doc.id+'">'+(doc.preview?'<img loading="lazy" src="'+src+doc.id+'" alt="">':"")+
+      '<span>'+esc(doc.name)+'</span></a>';
+  }).join("");
+  return '<article class="board-row"><div><a class="task-title" href="#task/'+task.id+'">'+esc(task.title)+'</a>'+
+    '<p>Owner · '+esc(person(task.owner))+'　 Liable · '+esc(people)+'</p></div><div><strong>'+esc(priority)+
+    ' priority</strong><p>Due · '+esc(task.record_date||"Unscheduled")+'</p></div><div class="board-files">'+files+'</div></article>';
+}
+function boardGroup(stage){
+  const state=boardState[stage];
+  const rank={High:0,Normal:1,Low:2};
+  const items=tasks().filter(t=>t.status===stage).sort((a,b)=>{
+    const byName=a.title.localeCompare(b.title,undefined,{numeric:true,sensitivity:"base"});
+    if(state.sort==="Name")return byName;
+    if(state.sort==="Priority")return rank[a.details.priority||"Normal"]-rank[b.details.priority||"Normal"]||byName;
+    return (a.record_date||"9999-99-99").localeCompare(b.record_date||"9999-99-99")||byName;
+  });
+  return '<details class="panel board-group" data-stage="'+stage+'" '+(state.expanded?"open":"")+'><summary>'+stage+
+    ' <span class="count">'+items.length+'</span></summary><div class="board-sort">'+select("taskSort","Sort by ",["Due date","Name","Priority"],state.sort)+
+    '</div>'+ (items.map(taskRow).join("")||'<p class="empty">No '+stage.toLowerCase()+' tasks.</p>')+'</details>';
+}
+function board(){
+  return '<button type="button" class="create-task" data-create-task>+ Create task</button>'+
+    '<dialog id="create-task" aria-labelledby="create-title"><div class="dialog-head"><h2 id="create-title">Create task</h2>'+
+    '<button type="button" class="close" data-dismiss-task aria-label="Close">×</button></div>'+
+    '<form class="form-grid" data-op="task">'+taskFields()+'<p class="wide form-error" role="alert"></p><button class="primary">Create task</button></form></dialog>'+
+    '<div class="task-stack">'+stages.map(boardGroup).join("")+'</div>';
 }
 function taskDetail() {
   const task=tasks().find(t=>String(t.id)===location.hash.split("/")[1]);
@@ -75,6 +103,7 @@ function taskDetail() {
     input("body","What was done?","area",'required maxlength="4000"');
   return '<div class="task-detail">'+back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
     '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
+    '<p>Liable people · '+esc((task.details.liable||[]).map(person).join(", ")||"None")+'</p>'+
     (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
     '<button class="primary" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
     panel("Linked meetings",team.meeting_tasks.filter(l=>l.task===task.id).map(l=>{
@@ -232,7 +261,12 @@ async function perform(control,action) {
   control.disabled=true;
   feedback.textContent="Working…";
   try { await action(); await refresh(); feedback.textContent="Saved."; }
-  catch(error){feedback.textContent=error.message; control.disabled=false;}
+  catch(error){
+    feedback.textContent=error.message;
+    const local=control.closest("dialog")?.querySelector(".form-error");
+    if(local)local.textContent=error.message;
+    control.disabled=false;
+  }
 }
 view.addEventListener("submit",event=>{
   event.preventDefault();
@@ -242,7 +276,9 @@ view.addEventListener("submit",event=>{
     return;
   }
   perform(form.querySelector("button"),async()=>{
-    const data=Object.fromEntries(new FormData(form));
+    const fields=new FormData(form);
+    const data=Object.fromEntries(fields);
+    if(op==="task"||op==="edit-task")data.liable=fields.getAll("liable");
     if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"].includes(op)) {
       form.dataset.key ||= crypto.randomUUID();
       data.request_key=form.dataset.key;
@@ -277,6 +313,19 @@ view.addEventListener("change",event=>{
   const control=event.target;
   if(control.name==="categoryFilter"){purchaseCategory=control.value;render();return;}
   if(control.name==="purchaseProject"){purchaseProject=control.value;render();return;}
+  if(control.name==="owner"){
+    for(const box of control.form.querySelectorAll('[name="liable"]')){
+      box.disabled=box.value===control.value;
+      if(box.disabled)box.checked=false;
+    }
+  }
+  if(control.name==="taskSort"){
+    const group=control.closest("[data-stage]");
+    boardState[group.dataset.stage].sort=control.value;
+    boardState[group.dataset.stage].expanded=true;
+    group.outerHTML=boardGroup(group.dataset.stage);
+    return;
+  }
   if(control.name==="displayCurrency"){displayCurrency=control.value;render();return;}
   if(control.name==="meetingMonth" && control.value){meetingMonth=control.value;render();return;}
   if(control.dataset.order){
@@ -294,7 +343,12 @@ async function searchMeetings(form,page=""){
     ' <button class="secondary" data-link-event="'+esc(e.id)+'" data-task="'+esc(task)+'">Link to task</button></p>').join("")||"<p>No matching meetings.</p>";
   if(result.nextPageToken)container.innerHTML+='<button class="secondary" data-events-page="'+esc(result.nextPageToken)+'">Next meetings</button>';
 }
+view.addEventListener("toggle",event=>{
+  if(event.target.isConnected && event.target.dataset.stage)boardState[event.target.dataset.stage].expanded=event.target.open;
+},true);
 view.addEventListener("click",async event=>{
+  if(event.target.closest("[data-create-task]")){view.querySelector("#create-task").showModal();return;}
+  if(event.target.closest("[data-dismiss-task]")){view.querySelector("#create-task").close();return;}
   const link=event.target.closest("[data-link-event]");
   if(link){perform(link,()=>api("/api/google/link",{task:link.dataset.task,event:link.dataset.linkEvent}));return;}
   const page=event.target.closest("[data-events-page]");

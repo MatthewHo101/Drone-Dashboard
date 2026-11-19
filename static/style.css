@@ -197,3 +197,17 @@ dialog::backdrop { background: #17251f85; }
 .cal-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; min-width:460px; }
 .cal-day { min-height:65px; border:1px solid var(--border); border-radius:6px; padding:5px; }
 .cal-meeting { display:block; width:100%; text-align:left; overflow-wrap:anywhere; border:0; border-radius:4px; padding:4px; margin-top:3px; background:var(--accent); color:var(--dark); }
+
+.create-task { background:#275c53; color:white; border:0; border-radius:7px; padding:8px 14px; font-weight:650; margin-bottom:15px; }
+.board-group summary { cursor:pointer; padding:15px 18px; font-weight:700; }
+.board-sort { padding:0 18px 12px; }
+.task-stack .board-row { display:grid; grid-template-columns:minmax(0,2fr) minmax(8rem,1fr) minmax(0,1.5fr); padding:14px 18px; border-top:1px solid var(--border); overflow-wrap:anywhere; }
+.board-row p { margin:5px 0; font-size:.85rem; }
+.task-title { font-weight:700; }
+.board-files { display:flex; gap:10px; flex-wrap:wrap; }
+.board-files a { display:grid; gap:4px; max-width:110px; font-size:.8rem; }
+.board-files img { width:84px; height:60px; object-fit:contain; }
+.form-grid .liable { min-width:0; border:1px solid var(--border); border-radius:7px; }
+.form-grid .liable label { display:inline-flex; align-items:center; margin:4px 12px 4px 0; gap:5px; }
+.form-grid .liable input[type=checkbox] { width:1em; min-height:0; }
+@media(max-width:680px){ .task-stack .board-row {grid-template-columns:1fr;} }

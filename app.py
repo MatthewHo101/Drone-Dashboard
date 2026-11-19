@@ -160,6 +160,14 @@ def save_record(conn, data, actor, record_id=None):
         details["expected"] = clean_text(data, "expected", 2000, True)
         details["actual"] = clean_text(data, "actual", 2000, status != "Planned")
     elif kind == "issues":
+        if "liable" in data:
+            liable=data["liable"]
+            if not isinstance(liable,list) or any(not isinstance(n,str) for n in liable):
+                raise ValueError("Choose liable people from the workspace.")
+            members={r[0] for r in conn.execute("SELECT name FROM users")}
+            if not set(liable)<=members:
+                raise ValueError("Unknown liable person.")
+            details["liable"]=sorted(set(liable)-{owner})
         details["project"] = clean_text(data, "project", 100)
         details["priority"] = clean_text(data,"priority",10) or "Normal"
         if details["priority"] not in ("Low","Normal","High"):
@@ -184,6 +192,12 @@ def save_record(conn, data, actor, record_id=None):
                 raise ValueError("This airframe already has that revision.")
 
     now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    if record_id is not None:
+        old = conn.execute("SELECT * FROM records WHERE id = ? AND kind = ?", (record_id, kind)).fetchone()
+        if old is None:
+            raise LookupError("Record not found.")
+        if kind=="issues" and "liable" not in details:
+            details["liable"]=[n for n in json.loads(old["details"]).get("liable",[]) if n!=owner]
     fields = (title, status, owner, record_date, notes, json.dumps(details), build_id, test_id, actor, now)
     if record_id is None:
         cursor = conn.execute(
@@ -193,9 +207,6 @@ def save_record(conn, data, actor, record_id=None):
         )
         record_id = cursor.lastrowid
     else:
-        old = conn.execute("SELECT * FROM records WHERE id = ? AND kind = ?", (record_id, kind)).fetchone()
-        if old is None:
-            raise LookupError("Record not found.")
         if data.get("updated_at") != old["updated_at"]:
             raise EditConflict("This record changed. Copy any unsaved edits, then reload and reopen it.")
         if kind == "builds" and conn.execute("SELECT 1 FROM records WHERE build_id = ? AND kind = 'tests'", (record_id,)).fetchone():
