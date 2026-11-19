@@ -35,6 +35,8 @@ def reset_accounts(conn, initial_password):
     # Caller holds a write transaction. Records keep their last-editor history.
     activation = secrets.token_urlsafe(24)
     conn.execute("UPDATE records SET owner=NULL WHERE owner IS NOT NULL")
+    conn.execute("UPDATE calendar_meetings SET actor=NULL")
+    conn.execute("DELETE FROM calendar_deadlines")
     for table in ("sessions","pending","recovery","factors","profiles","admins","disabled","first_login","limits","users"):
         conn.execute(f"DELETE FROM {table}")
     salt = secrets.token_bytes(16)

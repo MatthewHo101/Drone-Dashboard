@@ -195,6 +195,8 @@ def handle(handler, conn, path, actor):
             doc["preview"] = commercial.preview_type(doc.pop("signature"))
             result["documents"].append(doc)
         community = os.environ.get("WHATSAPP_COMMUNITY_URL","")
+        import google_calendar
+        result.update(google_calendar.snapshot(conn,actor))
         result["community"] = community if re.fullmatch(r"https://chat\.whatsapp\.com/[A-Za-z0-9_-]+",community) else ""
         handler.json(200,result)
         return True
@@ -247,6 +249,16 @@ def handle(handler, conn, path, actor):
             raise ValueError("Unknown order status.")
         if not conn.execute("UPDATE orders SET status=? WHERE id=?", (data["status"],data.get("id"))).rowcount:
             raise LookupError("Order not found.")
+    elif op == "link-meeting":
+        if not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?",(data.get("task"),)).fetchone():
+            raise ValueError("Task unavailable.")
+        if not conn.execute("SELECT 1 FROM meetings WHERE id=?",(data.get("meeting"),)).fetchone():
+            raise ValueError("Meeting unavailable.")
+        conn.execute("INSERT OR IGNORE INTO meeting_tasks VALUES(?,?)",(data["meeting"],data["task"]))
+    elif op == "meeting-notes":
+        notes=string(data,"notes",30000,True)
+        if not conn.execute("UPDATE meetings SET notes=?,summary='' WHERE id=?",(notes,data.get("meeting"))).rowcount:
+            raise LookupError("Meeting unavailable.")
     elif op == "meeting":
         day = date.fromisoformat(string(data,"day",10))
         meeting = conn.execute("INSERT INTO meetings(title,day,notes,summary) VALUES(?,?,?,?)",

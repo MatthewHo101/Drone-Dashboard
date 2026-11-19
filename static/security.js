@@ -12,6 +12,27 @@ async function request(op, data) {
   if (!response.ok) throw Error(result.error || "Request failed.");
   return result;
 }
+async function calendarAccount(action){
+  const response=await fetch("/api/google/"+action,{method:"POST",headers:{"Content-Type":"application/json","X-Fieldbench":"1"},body:"{}"});
+  const result=await response.json();
+  if(!response.ok)throw Error(result.error);
+  return result;
+}
+const googleAccount=byId("google-account");
+async function calendarState(){
+  const result=await calendarAccount("status");
+  googleAccount.dataset.connected=String(result.connected);
+  googleAccount.textContent=result.connected?"Disconnect Google Calendar":"Connect Google Calendar";
+}
+googleAccount.onclick=async()=>{
+  googleAccount.disabled=true;
+  try{
+    const result=await calendarAccount(googleAccount.dataset.connected==="true"?"disconnect":"connect");
+    if(result.url)location.assign(result.url);
+    else await calendarState();
+  }catch(error){message.textContent=error.message;}finally{googleAccount.disabled=false;}
+};
+calendarState().catch(()=>{});
 async function refresh() {
   const info = await request("settings");
   controls.hidden = false;

@@ -157,6 +157,30 @@ class WorkspaceSecurity(unittest.TestCase):
         _,snapshot=self.call("/api/team",cookie=cookie)
         self.assertEqual(snapshot["overview"]["totals"]["GBP"], {"revenue":"800000","cost":"520160"})
 
+    def test_linked_calendar_meeting_and_deadline_sync(self):
+        from app import google_calendar as google
+        cookie=self.login()
+        _,task=self.call("/api/records",dict(kind="issues",title="Review design",owner="owner",status="Open",
+                           record_date="2026-12-01"),cookie,201)
+        event=dict(id="occurrence",summary="Design review",start={"dateTime":"2026-11-28T12:00:00+08:00"},etag="first")
+        with app.database() as conn, patch.object(google,"request",return_value=event):
+            google.meeting_action(conn,"owner","token","link",dict(task=task["id"],event=event["id"]))
+            conn.execute("INSERT INTO calendar_accounts(actor,credential) VALUES('owner',?)",(b"mock",))
+            conn.execute("INSERT INTO google_event_ids VALUES(?,?)",(task["id"],"deadline"))
+            conn.execute("INSERT INTO calendar_deadlines VALUES('owner',?,?)",(task["id"],"2026-11-30"))
+        self.call("/api/team/meeting-notes",dict(meeting=1,notes="Discuss firmware"),cookie)
+        _,follow=self.call("/api/records",dict(kind="issues",title="Follow up",owner="owner",status="Open",
+                           priority="High",meeting=1),cookie,201)
+        self.assertEqual(follow["details"]["priority"],"High")
+        moved=dict(event,start={"date":"2026-11-29"},etag="second")
+        with patch.object(google,"access",return_value="token"), patch.object(google,"request",side_effect=[moved,{}]) as calls:
+            google.sync_account(app.database,{"actor":"owner"})
+            self.assertEqual(calls.call_args.args[1]["start"]["date"],"2026-12-01")
+        _,snapshot=self.call("/api/team",cookie=cookie)
+        self.assertEqual(len(snapshot["meeting_tasks"]),2)
+        self.assertEqual(snapshot["meetings"][0]["day"],"2026-11-29")
+        self.assertEqual(snapshot["meetings"][0]["notes"],"Discuss firmware")
+
     def test_reset_and_first_login(self):
         old = self.login()
         self.call("/auth/request",{"name":"visitor","password":self.password},status=202)

@@ -161,6 +161,9 @@ def save_record(conn, data, actor, record_id=None):
         details["actual"] = clean_text(data, "actual", 2000, status != "Planned")
     elif kind == "issues":
         details["project"] = clean_text(data, "project", 100)
+        details["priority"] = clean_text(data,"priority",10) or "Normal"
+        if details["priority"] not in ("Low","Normal","High"):
+            raise ValueError("Invalid priority.")
         details["next_action"] = clean_text(data, "next_action", 300)
     else:
         details["supplier"] = clean_text(data, "supplier", 100)
@@ -205,6 +208,11 @@ def save_record(conn, data, actor, record_id=None):
             """UPDATE records SET title=?,status=?,owner=?,record_date=?,notes=?,details=?,
                build_id=?,test_id=?,updated_by=?,updated_at=? WHERE id=?""", (*fields, record_id)
         )
+    if kind=="issues" and data.get("meeting"):
+        meeting=conn.execute("SELECT id FROM meetings WHERE id=?", (data["meeting"],)).fetchone()
+        if not meeting:
+            raise ValueError("Meeting unavailable.")
+        conn.execute("INSERT OR IGNORE INTO meeting_tasks VALUES(?,?)",(meeting[0],record_id))
     return as_record(conn.execute("SELECT * FROM records WHERE id = ?", (record_id,)).fetchone())
 
 
@@ -422,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         raise LookupError("Unknown account operation.")
                     return
-                if path in ("/api/google/add","/api/google/finish") and self.command=="POST":
+                if path.startswith("/api/google/") and self.command=="POST":
                     if self.server.demo:
                         raise PermissionError("Connect Google Calendar in the live workspace.")
                     result = google_calendar.handle(conn,self.session_digest(),path,team.payload(self,8192))
@@ -551,6 +559,8 @@ def main():
                     print("No accounts yet. Run 'python app.py add-user <name>' before signing in.", flush=True)
         with ThreadingHTTPServer((args.host, args.port), Handler) as server:
             threading.Thread(target=team.commercial.rate_worker, args=(database,), daemon=True).start()
+            if not args.demo:
+                threading.Thread(target=google_calendar.sync_worker,args=(database,),daemon=True).start()
             server.demo = args.demo
             print(f"Lysim listening at http://{args.host}:{args.port}", flush=True)
             try:
