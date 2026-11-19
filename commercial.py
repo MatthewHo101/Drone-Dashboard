@@ -144,7 +144,7 @@ def link_task(conn,kind,resource,data):
         raise ValueError("Choose an existing task.")
     table={"sales":"sales","commercial":"opportunities","charts":"charts","orders":"orders","documents":"documents","notes":"shared_notes"}[kind]
     row=require_row(conn,table,resource)
-    if kind in ("orders","documents"):
+    if kind=="documents" or (kind=="orders" and row["document"] is not None):
         doc=row["document"] if kind=="orders" else resource
         if conn.execute("SELECT 1 FROM task_update_details WHERE document=?",(doc,)).fetchone():
             raise ValueError("This attachment belongs to a task update.")

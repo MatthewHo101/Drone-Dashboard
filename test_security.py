@@ -64,6 +64,25 @@ class WorkspaceSecurity(unittest.TestCase):
         request = next(row for row in settings["requests"] if row["name"]==name)
         self.call("/account/approve",{"request_id":request["id"],"password":self.password},admin_cookie)
 
+    def test_admin_bulk_document_deletion(self):
+        admin = self.login()
+        self.approve_new("teammate2",admin)
+        member = self.login("teammate2")
+        for name in ("Invoice.pdf","Photo.png"):
+            self.call("/api/team/document",{"filename":name,"file":base64.b64encode(b"content").decode()},member)
+        def snapshot():
+            return self.call("/api/team",cookie=member)[1]
+        ids = [row["id"] for row in snapshot()["documents"]]
+        self.assertFalse(snapshot()["can_delete_documents"])
+        self.call("/api/team/delete-documents",{"ids":ids},member,403)
+        self.call("/api/team/delete-documents",{"ids":ids+[9999]},admin,400)
+        self.assertEqual(len(snapshot()["documents"]),2)
+        self.call("/api/team/delete-documents",{"ids":ids},admin)
+        self.assertEqual(snapshot()["documents"],[])
+        self.call("/downloads/"+str(ids[0]),cookie=admin,status=404)
+        self.call("/api/team/document",{"filename":"Next file"},member)
+        self.assertGreater(snapshot()["documents"][0]["id"],max(ids))
+
     def test_task_history_and_documents(self):
         cookie = self.login()
         _, task = self.call("/api/records", dict(kind="issues", title="Check frame",

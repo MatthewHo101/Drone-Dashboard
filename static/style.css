@@ -327,3 +327,10 @@ dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}
 
 #workspace > .panel + .panel-grid {margin-top:16px;}
 .board-files .doc-peek img {width:auto;height:auto;}
+.doc-tools,.document-result {display:flex;align-items:center;gap:10px;}
+.doc-tools {flex-wrap:wrap;margin-bottom:12px;}
+.doc-tools input[type=search] {width:min(100%,24rem);}
+.document-result .doc-card {flex:1;min-width:0;}
+.document-result[hidden] {display:none;}
+.delete-docs {border:1px solid #cfa9a5;background:white;color:#852e27;border-radius:6px;padding:6px 10px;}
+.delete-docs:disabled {opacity:.5;}

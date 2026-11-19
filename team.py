@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS factors(name TEXT PRIMARY KEY REFERENCES users(name),
  last_step INTEGER DEFAULT -1, attempts INTEGER DEFAULT 0, blocked_until INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, name TEXT REFERENCES users(name), expires INTEGER);
 CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY, task INTEGER REFERENCES records(id), name TEXT, body BLOB);
+CREATE TABLE IF NOT EXISTS document_high_water(id INTEGER PRIMARY KEY CHECK(id=1), last_id INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS pdf_thumbnails(document INTEGER PRIMARY KEY REFERENCES documents(id), image BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS upload_info(document INTEGER PRIMARY KEY REFERENCES documents(id), source TEXT NOT NULL,
  actor TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
@@ -119,7 +120,7 @@ def upload(conn, data, actor, source):
     task = data.get("task")
     if task and not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?", (task,)).fetchone():
         raise ValueError("Choose an existing task.")
-    doc_id = conn.execute("INSERT INTO documents(task,name,body) VALUES(?,?,?)", (task or None,name,raw)).lastrowid
+    doc_id = conn.execute("INSERT INTO documents(id,task,name,body) SELECT max(coalesce(max(id),0),coalesce((SELECT last_id FROM document_high_water),0))+1,?,?,? FROM documents", (task or None,name,raw)).lastrowid
     conn.execute("INSERT INTO upload_info(document,source,actor) VALUES(?,?,?)",(doc_id,source,actor))
     if data.get("sale"):
         sale = commercial.require_row(conn,"sales",data["sale"])
@@ -230,6 +231,34 @@ def render_document(handler,conn,path):
         raise ValueError("This file could not be previewed.") from error
 
 
+def can_delete_documents(conn,actor,demo):
+    import security
+    return (not demo and security.exists(conn,"admins",actor)
+            and (not security.mandatory(conn) or security.exists(conn,"factors",actor)))
+
+
+def delete_documents(conn,ids,actor):
+    import security
+    if not isinstance(ids,list) or not ids or any(type(i) is not int or not 0<i<2**63 for i in ids):
+        raise ValueError("Select documents to delete.")
+    conn.execute("CREATE TEMP TABLE selected_documents(id INTEGER PRIMARY KEY)")
+    conn.executemany("INSERT OR IGNORE INTO selected_documents VALUES(?)",((i,) for i in ids))
+    selected = "(SELECT id FROM selected_documents)"
+    if conn.execute("SELECT id FROM selected_documents EXCEPT SELECT id FROM documents").fetchone():
+        raise ValueError("A selected document is no longer available. Refresh the list.")
+    conn.execute("""INSERT INTO document_high_water VALUES(1,(SELECT max(id) FROM documents))
+        ON CONFLICT(id) DO UPDATE SET last_id=max(last_id,excluded.last_id)""")
+    conn.execute(f"""INSERT OR REPLACE INTO task_resources SELECT 'orders',o.id,d.task
+        FROM orders o JOIN documents d ON o.document=d.id WHERE d.task IS NOT NULL AND d.id IN {selected}""")
+    for table in ("orders","task_update_details"):
+        conn.execute(f"UPDATE {table} SET document=NULL WHERE document IN {selected}")
+    for table in ("upload_info","pdf_thumbnails","sale_docs","note_photos"):
+        conn.execute(f"DELETE FROM {table} WHERE document IN {selected}")
+    conn.execute(f"DELETE FROM task_resources WHERE kind='documents' AND resource IN {selected}")
+    count=conn.execute(f"DELETE FROM documents WHERE id IN {selected}").rowcount
+    security.audit(conn,"Documents deleted",actor,str(count))
+
+
 def handle(handler, conn, path, actor):
     if path.startswith("/reader/") and handler.command=="GET":
         render_document(handler,conn,path)
@@ -290,6 +319,7 @@ def handle(handler, conn, path, actor):
                          LEFT JOIN task_update_details d ON d.update_id=u.id""", "orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
                    "charts":"SELECT c.*,g.graph,p.project FROM charts c LEFT JOIN chart_layout g ON g.chart=c.id LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
+        result["can_delete_documents"]=can_delete_documents(conn,actor,handler.server.demo)
         result.update(commercial.snapshot(conn))
         result["resource_links"] = [dict(r) for r in conn.execute("""SELECT kind,resource,task FROM task_resources UNION ALL
             SELECT 'orders',o.id,d.task FROM orders o JOIN documents d ON d.id=o.document WHERE d.task IS NOT NULL""")]
@@ -316,6 +346,14 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, ENCODED_LIMIT+65536)
     op = path.rsplit("/",1)[-1]
+    if op=="delete-documents":
+        conn.execute("BEGIN IMMEDIATE")
+        if not can_delete_documents(conn,actor,handler.server.demo):
+            raise PermissionError("Administrator access required.")
+        delete_documents(conn,data.get("ids"),actor)
+        conn.commit()
+        handler.json(200,{"saved":True})
+        return True
     if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update","edit-note","note-photo","note-file"):
         conn.execute("BEGIN IMMEDIATE")
         token = string(data,"request_key",64,True)

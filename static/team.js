@@ -162,6 +162,7 @@ function taskDetail() {
       (history+otherFiles||'<p>No work updates yet.</p>'))+'</div>';
 }
 function download(doc) {
+  if(!doc)return "";
   if(doc?.size===null)return '<a class="text-link" href="#documents/'+doc.id+'">Draft · add file</a>';
   return '<a class="text-link" href="/downloads/'+doc.id+'">'+esc(doc.name)+' ↓</a>';
 }
@@ -209,10 +210,33 @@ function documents() {
       row("File size",doc.size===null?"Awaiting file":doc.size.toLocaleString()+" bytes")+
       (task?row("Task",'<a href="#task/'+task.id+'">'+esc(task.title)+'</a>'):"")+
       (sale?row("Sales order",'<a href="#sales/'+sale.id+'">'+esc(sale.title)+'</a>'):"")+
-      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+(doc.update_id?'':taskAssociation('documents',doc.id,doc.task))+reader(doc)+download(doc));
+      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+(doc.update_id?'':taskAssociation('documents',doc.id,doc.task))+reader(doc)+download(doc)+(team.can_delete_documents?'<button type="button" class="delete-docs" data-delete-document="'+doc.id+'">Delete document</button>':""));
   }
   return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 20 MiB","file"))+
-    '<div class="document-list">'+team.documents.map(doc=>documentCard(doc)).join("")+'</div>';
+    '<div class="doc-tools"><input type="search" name="documentSearch" aria-label="Search documents by name" placeholder="Search documents by name">'+
+    (team.can_delete_documents?'<label><input type="checkbox" data-select-docs> Select all results</label><button type="button" class="delete-docs" data-delete-selected disabled>Delete selected</button>':"")+'</div>'+
+    '<div class="document-list">'+team.documents.map(doc=>'<div class="document-result" data-filename="'+esc(doc.name.toLowerCase())+'">'+
+      (team.can_delete_documents?'<input type="checkbox" data-doc-id="'+doc.id+'" aria-label="Select '+esc(doc.name)+'">':"")+documentCard(doc)+'</div>').join("")+'</div>'+
+    '<p data-no-docs '+(team.documents.length?"hidden":"")+'>No documents found.</p>';
+}
+function filterDocuments(){
+  const query=view.querySelector('[name="documentSearch"]').value.trim().toLowerCase();
+  const rows=[...view.querySelectorAll(".document-result")];
+  for(const row of rows){
+    row.hidden=!row.dataset.filename.includes(query);
+    if(row.hidden && row.firstElementChild.matches("[data-doc-id]"))row.firstElementChild.checked=false;
+  }
+  const visible=rows.filter(row=>!row.hidden);
+  view.querySelector("[data-no-docs]").hidden=visible.length>0;
+  const all=view.querySelector("[data-select-docs]");
+  if(!all)return;
+  const count=view.querySelectorAll("[data-doc-id]:checked").length;
+  all.disabled=!visible.length;
+  all.checked=!!count && count===visible.length;
+  all.indeterminate=count>0 && count<visible.length;
+  const button=view.querySelector("[data-delete-selected]");
+  button.disabled=!count;
+  button.textContent=count?"Delete selected ("+count+")":"Delete selected";
 }
 function attachmentThumbnail(doc){
   if(!doc)return "";
@@ -277,6 +301,10 @@ function meetings() {
 function noteTitle(note){
   return note.title || note.contact || note.company || note.body.trim().split("\n")[0].slice(0,80) || "Untitled note";
 }
+function noteHeading(note){
+  const title=noteTitle(note);
+  return note.company && note.company!==title ? title+", "+note.company : title;
+}
 function noteForm(note){
   const n=note || {};
   const fields=valueInput("title","Title",n.title)+valueInput("contact","Contact name",n.contact)+
@@ -301,10 +329,10 @@ function noteRows(){
     return byDate(a,b);
   });
   return rows.map(n=>{
-    const meta=[new Date(n.updated_at).toLocaleDateString(),person(n.author),taskName(n),n.company,n.phone].filter(Boolean);
+    const meta=[new Date(n.updated_at).toLocaleDateString(),person(n.author),taskName(n),n.phone].filter(Boolean);
     const file=team.documents.find(d=>d.note===n.id);
     return '<article class="note-row doc-card" data-note-id="'+n.id+'"><a class="doc-hit" href="#notes/'+n.id+'">'+
-      attachmentThumbnail(file)+'<strong>'+esc(noteTitle(n))+'</strong><span class="note-meta">'+esc(meta.join(" · "))+'</span></a>'+
+      attachmentThumbnail(file)+'<strong>'+esc(noteHeading(n))+'</strong><span class="note-meta">'+esc(meta.join(" · "))+'</span></a>'+
       attachmentPeek(file)+'</article>';
   }).join("");
 }
@@ -323,7 +351,7 @@ function notes(){
     .filter(([,value])=>value).map(([label,value])=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join("");
   const files=team.documents.filter(doc=>doc.note===n.id).map(doc=>documentCard(doc,true)).join("");
   const linkedTask=tasks().find(t=>t.id===resourceTask("notes",n.id));
-  return back+panel(noteTitle(n),'<dl class="details">'+details+'</dl>'+(linkedTask?recordRow('#task/'+linkedTask.id,linkedTask.title,'Linked task'):'')+'<pre>'+esc(n.body)+'</pre><small>Added by '+
+  return back+panel(noteHeading(n),'<dl class="details">'+details+'</dl>'+(linkedTask?recordRow('#task/'+linkedTask.id,linkedTask.title,'Linked task'):'')+'<pre>'+esc(n.body)+'</pre><small>Added by '+
     esc(person(n.author))+' · Updated '+esc(new Date(n.updated_at).toLocaleString())+' by '+esc(person(n.edited_by))+'</small>'+
     noteForm(n)+form("note-file","Add files",hiddenId("id",n.id)+attachmentInput())+'<div class="document-list">'+files+'</div>');
 }
@@ -469,6 +497,7 @@ view.addEventListener("submit",event=>{
   });
 });
 view.addEventListener("input",event=>{
+  if(event.target.name==="documentSearch"){filterDocuments();return;}
   if(!event.target.matches(".note-search"))return;
   const query=event.target.value.trim().toLowerCase();
   const visible=new Set(team.notes.filter(n=>[n.title,n.contact,n.company,n.phone,n.email,n.body]
@@ -478,6 +507,10 @@ view.addEventListener("input",event=>{
 });
 view.addEventListener("change",event=>{
   const control=event.target;
+  if(control.matches("[data-select-docs]")){
+    for(const item of view.querySelectorAll(".document-result:not([hidden]) [data-doc-id]"))item.checked=control.checked;
+  }
+  if(control.matches("[data-select-docs],[data-doc-id]")){filterDocuments();return;}
   if(control.name==="noteSort"){
     noteSort=control.value; view.querySelector(".note-rows").innerHTML=noteRows();
     view.querySelector(".note-search").dispatchEvent(new Event("input",{bubbles:true})); return;
@@ -549,6 +582,18 @@ function repositionPreviews(){
 window.addEventListener("resize",repositionPreviews);
 window.addEventListener("scroll",repositionPreviews,true);
 view.addEventListener("click",async event=>{
+  const deletion=event.target.closest("[data-delete-selected],[data-delete-document]");
+  if(deletion){
+    const ids=deletion.dataset.deleteDocument?[Number(deletion.dataset.deleteDocument)]:
+      [...view.querySelectorAll("[data-doc-id]:checked")].map(box=>Number(box.dataset.docId));
+    if(ids.length && confirm("Permanently delete "+ids.length+" document"+(ids.length===1?"":"s")+" and remove their attachments from linked records?")){
+      perform(deletion,async()=>{
+        await api("/api/team/delete-documents",{ids});
+        if(deletion.dataset.deleteDocument)location.hash="#documents";
+      });
+    }
+    return;
+  }
   const zoom=event.target.closest("[data-view-tool]");
   if(zoom){zoom.closest(".chart-actions").nextElementSibling.tool(zoom.dataset.viewTool);return;}
   const opener=event.target.closest("[data-show-form]");
