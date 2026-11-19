@@ -273,3 +273,7 @@ dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
   .sidebar > .identity {align-self:stretch;justify-content:flex-start;margin-inline:-18px;padding:16px 18px;min-height:66px;box-sizing:border-box;}
 }
 @media(max-width:740px){.sidebar > .identity {padding:6px 8px;}}
+.finance-head {display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px 8px 16px;background:#d7e9e0;color:#163f36;}
+.finance-head > a {flex:1;padding:5px 0;font-weight:700;color:inherit;text-decoration:none;}
+.finance-head > a:hover,.finance-summary:hover dd {text-decoration:underline;}
+.finance-summary {display:block;color:inherit;text-decoration:none;}
