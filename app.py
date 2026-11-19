@@ -57,6 +57,7 @@ ASSETS = {
     "/login": ("login.html", "text/html; charset=utf-8"),
     "/login.js": ("login.js", "text/javascript; charset=utf-8"),
     "/team": ("team.html", "text/html; charset=utf-8"),
+    "/flow.js": ("flow.js", "text/javascript; charset=utf-8"),
     "/team.js": ("team.js", "text/javascript; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),

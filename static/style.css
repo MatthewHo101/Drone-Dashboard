@@ -277,3 +277,16 @@ dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
 .finance-head > a {flex:1;padding:5px 0;font-weight:700;color:inherit;text-decoration:none;}
 .finance-head > a:hover,.finance-summary:hover dd {text-decoration:underline;}
 .finance-summary {display:block;color:inherit;text-decoration:none;}
+flow-canvas {display:block;margin-block:12px;}
+flow-canvas[hidden] {display:none;}
+.flow-tools {display:flex;gap:6px;flex-wrap:wrap;margin-block:8px;}
+.flow-tools button {padding:6px 10px;}
+.flow-tools [aria-pressed="true"] {background:#d7e9e0;}
+.flow-surface {width:100%;height:clamp(220px,40vh,440px);border:1px solid #b8c8ba;border-radius:8px;background:#fafcf8;cursor:grab;touch-action:none;user-select:none;}
+.flow-surface:active {cursor:grabbing;}
+.flow-link {stroke:#486253;stroke-width:2;fill:none;}
+.flow-surface marker path {fill:#486253;}
+.flow-surface g[data-node] rect,.flow-surface g[data-node] polygon {fill:#edf5df;stroke:#657f65;stroke-width:2;}
+.flow-surface g.selected rect,.flow-surface g.selected polygon {stroke:#2457ac;stroke-width:3;}
+.flow-surface text {font:13px system-ui;}
+dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, supplier TEXT, invoice
  quantity INTEGER, unit_minor INTEGER, extra_minor INTEGER, document INTEGER REFERENCES documents(id), status TEXT);
 CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, title TEXT, day TEXT, notes TEXT, summary TEXT);
 CREATE TABLE IF NOT EXISTS charts(id INTEGER PRIMARY KEY, title TEXT, edges TEXT);
+CREATE TABLE IF NOT EXISTS chart_layout(chart INTEGER PRIMARY KEY REFERENCES charts(id), graph TEXT NOT NULL);
 """
 STAGES = ("Ordered", "In transit", "Received", "Cancelled")
 LIMIT = 20 * 1024 * 1024
@@ -245,7 +246,7 @@ def handle(handler, conn, path, actor):
     if path == "/api/team" and handler.command == "GET":
         queries = {"task_updates":"""SELECT u.*,d.work_date,d.document FROM task_updates u
                          LEFT JOIN task_update_details d ON d.update_id=u.id""", "orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
-                   "charts":"SELECT c.*,p.project FROM charts c LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
+                   "charts":"SELECT c.*,g.graph,p.project FROM charts c LEFT JOIN chart_layout g ON g.chart=c.id LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
         result.update(commercial.snapshot(conn))
         result["resource_links"] = [dict(r) for r in conn.execute("""SELECT kind,resource,task FROM task_resources UNION ALL
@@ -365,6 +366,25 @@ def handle(handler, conn, path, actor):
             if len(nodes) != 2 or not all(node.strip() for node in nodes):
                 raise ValueError("Enter one connection per line, such as Design -> Review.")
         chart = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title",160,True) or "Untitled flowchart",edges))
+        if "graph" in data:
+            graph = data["graph"]
+            if not isinstance(graph, dict):
+                raise ValueError("Invalid flowchart.")
+            nodes, links = graph.get("nodes"), graph.get("links")
+            if not isinstance(nodes, list) or len(nodes)>200 or not isinstance(links, list) or len(links)>500:
+                raise ValueError("Use up to 200 shapes and 500 connections.")
+            ids = set()
+            for node in nodes:
+                if (not isinstance(node, dict) or type(node.get("id")) is not int or node["id"] in ids
+                    or node.get("shape") not in ("step","decision","terminal")
+                    or not isinstance(node.get("label"), str) or len(node["label"])>100
+                    or any(type(node.get(k)) is not int or abs(node[k])>1000000 for k in ("x","y"))):
+                    raise ValueError("Invalid flowchart shape.")
+                ids.add(node["id"])
+            for link in links:
+                if not isinstance(link,list) or len(link)!=2 or any(type(i) is not int or i not in ids for i in link):
+                    raise ValueError("Invalid flowchart connection.")
+            conn.execute("INSERT INTO chart_layout VALUES(?,?)",(chart.lastrowid,json.dumps(graph)))
         commercial.link_task(conn,"charts",chart.lastrowid,data)
         conn.execute("INSERT INTO chart_projects VALUES(?,?)",(chart.lastrowid,string(data,"project",100,True)))
     else:

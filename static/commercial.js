@@ -48,7 +48,7 @@ function commercialOverview() {
   const format=value=>value===null?"Rate unavailable":esc(displayCurrency)+" "+cash(value);
   const detailUrl="#finances/"+displayCurrency;
   const summaries='<section class="panel"><div class="finance-head"><a href="'+detailUrl+'">Finances <span aria-hidden="true">›</span></a>'+
-    '<label class="sort-chip currency-chip">Display currency <select name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label></div>'+
+    '<label class="sort-chip currency-chip"><select aria-label="Display currency" name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label></div>'+
     '<a class="finance-summary" href="'+detailUrl+'" aria-label="View finance details in '+displayCurrency+'"><dl class="delivery-totals">'+
     '<div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl></a></section>';
   const selected=Number(location.hash.split("/")[1]);

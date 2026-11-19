@@ -112,7 +112,7 @@ function boardGroup(stage){
   });
   return '<section class="panel board-shell"><details class="board-group" data-stage="'+stage+'" '+(state.expanded?"open":"")+'><summary>'+stage+
     ' <span class="count">'+items.length+'</span></summary>'+ (items.map(taskRow).join("")||'<p class="empty">No '+stage.toLowerCase()+' tasks.</p>')+
-    '</details><label class="sort-chip"><span aria-hidden="true">↕</span><select name="taskSort" aria-label="Sort '+stage+' tasks by">'+
+    '</details><label class="sort-chip"><select name="taskSort" aria-label="Sort '+stage+' tasks by">'+
     choices(["Due date","Name","Priority"],state.sort)+'</select></label></section>';
 }
 function board(){
@@ -263,30 +263,12 @@ function meetings() {
     (m.summary?'<h3>AI summary</h3><pre>'+esc(m.summary)+'</pre>':'')+
     '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("")||'<p>No meetings yet.</p>',true);
 }
-function diagram(source) {
-  if(!source)return "<p>No connections yet.</p>";
-  const edges=source.split(/\r?\n/).map(line=>line.split("->").map(s=>s.trim()));
-  const names=[...new Set(edges.flat())];
-  // Place nodes around an ellipse so branches and cycles share the same nodes.
-  const width=Math.max(520,names.length*100),height=Math.max(300,names.length*45);
-  const point=name=>{
-    const angle=2*Math.PI*names.indexOf(name)/names.length-Math.PI/2;
-    return [width/2+(width/2-90)*Math.cos(angle),height/2+(height/2-45)*Math.sin(angle)];
-  };
-  const lines=edges.map(([from,to])=>{
-    const [x,y]=point(from),[a,b]=point(to);
-    if(from===to) return '<path d="M '+x+' '+(y-17)+' c 45 -45 60 20 26 0" marker-end="url(#arrow)"/>';
-    const dx=a-x,dy=b-y;
-    const fraction=Math.min(76/Math.max(Math.abs(dx),0.001),19/Math.max(Math.abs(dy),0.001),0.45);
-    return '<path d="M '+x+' '+y+' L '+(a-dx*fraction)+' '+(b-dy*fraction)+'" marker-end="url(#arrow)"/>';
-  }).join("");
-  return '<div class="diagram"><svg role="img" aria-label="Directed flowchart" viewBox="0 0 '+width+' '+height+'">'+lines+
-    names.map(name=>{const [x,y]=point(name);return '<g><title>'+esc(name)+'</title><rect x="'+(x-75)+'" y="'+(y-17)+'" width="150" height="34" rx="8"/><text x="'+x+'" y="'+(y+4)+'">'+esc(name.length>21?name.slice(0,20)+"…":name)+'</text></g>';}).join("")+'</svg></div>';
-}
 function charts() {
-  return form("chart","Create a flowchart",taskSelect()+input("title","Chart name")+input("edges","Connections, one per line","area",'required maxlength="4000" placeholder="Design -> Review&#10;Review -> Test"'))+
-    '<svg class="defs" aria-hidden="true"><defs><marker id="arrow" orient="auto" markerWidth="8" markerHeight="8" refX="7" refY="4"><polygon points="0,0 8,4 0,8"/></marker></defs></svg>'+
-    team.charts.filter(c=>!location.hash.split("/")[1]||String(c.id)===location.hash.split("/")[1]).map(c=>fold("chart-"+c.id,c.title,taskAssociation("charts",c.id)+diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>',Boolean(location.hash.split("/")[1]))).join("");
+  const create=form("chart","Create a flowchart",taskSelect()+input("title","Chart name")+
+    '<div class="wide"><button type="button" data-open-editor>Open graphical editor</button><flow-canvas editable hidden></flow-canvas></div>');
+  const selected=location.hash.split("/")[1];
+  return create+team.charts.filter(c=>!selected||String(c.id)===selected).map(c=>
+    fold("chart-"+c.id,c.title,taskAssociation("charts",c.id)+'<flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
@@ -358,9 +340,10 @@ view.addEventListener("submit",event=>{
     searchMeetings(form).catch(error=>feedback.textContent=error.message);
     return;
   }
-  perform(form.querySelector("button"),async()=>{
+  perform(form.querySelector("button.primary") || form.querySelector("button"),async()=>{
     const fields=new FormData(form);
     const data=Object.fromEntries(fields);
+    if(op==="chart")data.graph=form.querySelector("flow-canvas").graph;
     if(op==="task"||op==="edit-task")data.liable=fields.getAll("liable");
     if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"].includes(op)) {
       form.dataset.key ||= crypto.randomUUID();
