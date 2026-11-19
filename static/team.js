@@ -55,8 +55,9 @@ function resourceTask(kind,id){
 }
 function taskAssociation(kind,id,current=resourceTask(kind,id)){
   const task=tasks().find(t=>t.id===current);
-  return (task?'<a class="text-link" href="#task/'+task.id+'">'+esc(task.title)+'</a>':"")+
-    form("resource-task",task?"Change linked task":"Link task",hiddenId("kind",kind)+hiddenId("resource",id)+taskSelect(current));
+  const link=task?'<a class="text-link" href="#task/'+task.id+'">'+esc(task.title)+'</a>':"";
+  const button=form("resource-task",task?"Change linked task":"Link task",hiddenId("kind",kind)+hiddenId("resource",id)+taskSelect(current));
+  return kind==="charts"?button+link:link+button;
 }
 function relatedRecords(task){
   const sources={notes:[team.notes,"Note"],orders:[team.orders,"Purchase"],sales:[team.sales,"Sales order"],commercial:[team.opportunities,"Opportunity"],charts:[team.charts,"Flowchart"]};
@@ -212,18 +213,28 @@ function documents() {
       (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+(doc.update_id?'':taskAssociation('documents',doc.id,doc.task))+reader(doc)+download(doc));
   }
   return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 20 MiB","file"))+
-    '<div class="document-list">'+team.documents.map(documentCard).join("")+'</div>';
+    '<div class="document-list">'+team.documents.map(doc=>documentCard(doc)).join("")+'</div>';
 }
-function documentCard(doc){
-      const details="#documents/"+doc.id;
-      const date=doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString():"Not recorded";
-      const uploader=doc.uploader?person(doc.uploader):"Not recorded";
-      const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
-      const thumb=doc.preview?'<img loading="lazy" src="'+src+doc.id+'" alt="">':'<span class="file-type">'+esc(doc.name.split(".").pop().slice(0,8).toUpperCase())+'</span>';
-      const peek=doc.preview?'<img loading="lazy" src="'+src+doc.id+'" alt="">':doc.reader?'<div data-reader="'+doc.id+'">Loading preview…</div>':"";
-      return '<article class="doc-card"><a class="doc-hit" href="'+details+'"><span class="doc-thumb">'+thumb+'</span><span><strong>'+esc(doc.name)+
-        '</strong><small>'+esc(date)+' · '+esc(uploader)+'</small></span></a>'+
-        (peek?'<div class="doc-peek" aria-hidden="true">'+peek+'</div>':"")+'</article>';
+function attachmentThumbnail(doc){
+  if(!doc)return "";
+  if(doc.preview){
+    const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
+    return '<span class="doc-thumb"><img loading="lazy" src="'+src+doc.id+'" alt=""></span>';
+  }
+  const ext=doc.name.includes(".")?doc.name.split(".").pop().slice(0,8).toUpperCase():"File";
+  return '<span class="doc-thumb"><span class="file-type">'+esc(ext)+'</span></span>';
+}
+function attachmentPeek(doc){
+  if(!doc)return "";
+  const content=doc.preview?attachmentThumbnail(doc):doc.reader?'<div data-reader="'+doc.id+'">Loading preview…</div>':"";
+  return content?'<div class="doc-peek" aria-hidden="true">'+content+'</div>':"";
+}
+function documentCard(doc,compact=false){
+  const date=doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString():"Not recorded";
+  const uploader=doc.uploader?person(doc.uploader):"Not recorded";
+  const meta=compact?"":'<small>'+esc(date)+' · '+esc(uploader)+'</small>';
+  return '<article class="doc-card"><a class="doc-hit" href="#documents/'+doc.id+'">'+attachmentThumbnail(doc)+
+    '<span><strong>'+esc(doc.name)+'</strong>'+meta+'</span></a>'+attachmentPeek(doc)+'</article>';
 }
 function meetingCalendar(){
   const [year,month]=meetingMonth.split("-").map(Number);
@@ -292,9 +303,10 @@ function noteRows(){
   });
   return rows.map(n=>{
     const meta=[new Date(n.updated_at).toLocaleDateString(),person(n.author),taskName(n),n.company,n.phone].filter(Boolean);
-    const files=team.documents.filter(d=>d.note===n.id);
-    return '<div class="note-row" data-note-id="'+n.id+'">'+recordRow("#notes/"+n.id,noteTitle(n),meta.join(" · "))+
-      (files.length?'<div class="document-list">'+files.slice(0,1).map(documentCard).join("")+'</div>':"")+'</div>';
+    const file=team.documents.find(d=>d.note===n.id);
+    return '<article class="note-row doc-card" data-note-id="'+n.id+'"><a class="doc-hit" href="#notes/'+n.id+'">'+
+      attachmentThumbnail(file)+'<strong>'+esc(noteTitle(n))+'</strong><span class="note-meta">'+esc(meta.join(" · "))+'</span></a>'+
+      attachmentPeek(file)+'</article>';
   }).join("");
 }
 function notes(){
@@ -310,7 +322,7 @@ function notes(){
   if(!n)return back+"<p>Note unavailable.</p>";
   const details=[["Contact",n.contact],["Company",n.company],["Phone",n.phone],["Email",n.email]]
     .filter(([,value])=>value).map(([label,value])=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join("");
-  const files=team.documents.filter(doc=>doc.note===n.id).map(documentCard).join("");
+  const files=team.documents.filter(doc=>doc.note===n.id).map(doc=>documentCard(doc,true)).join("");
   const linkedTask=tasks().find(t=>t.id===resourceTask("notes",n.id));
   return back+panel(noteTitle(n),'<dl class="details">'+details+'</dl>'+(linkedTask?recordRow('#task/'+linkedTask.id,linkedTask.title,'Linked task'):'')+'<pre>'+esc(n.body)+'</pre><small>Added by '+
     esc(person(n.author))+' · Updated '+esc(new Date(n.updated_at).toLocaleString())+' by '+esc(person(n.edited_by))+'</small>'+
@@ -509,9 +521,33 @@ view.addEventListener("toggle",event=>{
   if(event.target.isConnected && event.target.dataset.fold)foldStates.set(event.target.dataset.fold,event.target.open);
   if(event.target.isConnected && event.target.dataset.stage)boardState[event.target.dataset.stage].expanded=event.target.open;
 },true);
-for(const trigger of ["pointerover","focusin"]){
-  view.addEventListener(trigger,event=>loadReader(event.target.closest(".doc-card")?.querySelector(".doc-peek [data-reader]"),true));
+function positionPreview(card){
+  const peek=card?.querySelector(".doc-peek");
+  if(!peek || !peek.getClientRects().length)return;
+  const box=(card.querySelector(".doc-thumb") || card).getBoundingClientRect();
+  const gap=6, margin=8, above=box.top-margin-gap, below=innerHeight-box.bottom-margin-gap;
+  const height=Math.min(190,Math.max(above,below,0));
+  const left=Math.max(margin,Math.min(box.left,document.documentElement.clientWidth-peek.offsetWidth-margin));
+  peek.style.left=left+"px";
+  peek.style.maxHeight=height+"px";
+  if(below>=190 || below>=above){
+    peek.style.bottom="auto";peek.style.top=Math.max(margin,box.bottom+gap)+"px";
+  }else{
+    peek.style.top="auto";peek.style.bottom=Math.max(margin,innerHeight-box.top+gap)+"px";
+  }
 }
+for(const trigger of ["pointerover","focusin"]){
+  view.addEventListener(trigger,event=>{
+    const card=event.target.closest(".doc-card");
+    positionPreview(card);
+    loadReader(card?.querySelector(".doc-peek [data-reader]"),true);
+  });
+}
+function repositionPreviews(){
+  view.querySelectorAll(".doc-card:hover,.doc-card:focus-within").forEach(positionPreview);
+}
+window.addEventListener("resize",repositionPreviews);
+window.addEventListener("scroll",repositionPreviews,true);
 view.addEventListener("click",async event=>{
   const zoom=event.target.closest("[data-view-tool]");
   if(zoom){zoom.closest(".chart-actions").nextElementSibling.tool(zoom.dataset.viewTool);return;}
