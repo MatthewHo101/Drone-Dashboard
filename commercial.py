@@ -11,6 +11,7 @@ PIPELINE = ("Discovery","Qualified","Quoted","Lost")
 FULFILLMENT = ("Confirmed","In progress","Delivered","Cancelled")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fx_cache(id INTEGER PRIMARY KEY CHECK(id=1), fetched INTEGER, rate_day TEXT, rates TEXT);
+CREATE TABLE IF NOT EXISTS task_resources(kind TEXT, resource INTEGER, task INTEGER NOT NULL REFERENCES records(id), PRIMARY KEY(kind,resource));
 CREATE TABLE IF NOT EXISTS opportunities(id INTEGER PRIMARY KEY, customer TEXT, title TEXT, owner TEXT,
  stage TEXT, currency TEXT, quote INTEGER, estimate INTEGER, action TEXT, due TEXT, project TEXT);
 CREATE TABLE IF NOT EXISTS sales(id INTEGER PRIMARY KEY, opportunity INTEGER UNIQUE REFERENCES opportunities,
@@ -129,6 +130,25 @@ def day(value):
     return date.fromisoformat(value).isoformat() if value else ""
 
 
+def link_task(conn,kind,resource,data):
+    if "task" not in data:
+        return
+    task=data["task"] or None
+    if task and not conn.execute("SELECT 1 FROM records WHERE id=? AND kind='issues'",(task,)).fetchone():
+        raise ValueError("Choose an existing task.")
+    table={"sales":"sales","commercial":"opportunities","charts":"charts","orders":"orders","documents":"documents"}[kind]
+    row=require_row(conn,table,resource)
+    if kind in ("orders","documents"):
+        doc=row["document"] if kind=="orders" else resource
+        if conn.execute("SELECT 1 FROM task_update_details WHERE document=?",(doc,)).fetchone():
+            raise ValueError("This attachment belongs to a task update.")
+        conn.execute("UPDATE documents SET task=? WHERE id=?",(task,doc))
+        return
+    conn.execute("DELETE FROM task_resources WHERE kind=? AND resource=?",(kind,resource))
+    if task:
+        conn.execute("INSERT INTO task_resources VALUES(?,?,?)",(kind,resource,task))
+
+
 def apply(conn, op, d, actor):
     from team import string, money
     if op in ("lead","sale"):
@@ -140,6 +160,7 @@ def apply(conn, op, d, actor):
         if op=="sale":
             sale = conn.execute("INSERT INTO sales(customer,title,currency,status,due,project) VALUES(?,?,?,?,?,?)",
                          (customer,title,currency,"Confirmed",due,project)).lastrowid
+            link_task(conn,"sales",sale,d)
             received = money(d,"received") if d.get("received") else 0
             if received:
                 paid_on = date.fromisoformat(string(d,"paid_on",10)).isoformat()
@@ -149,16 +170,17 @@ def apply(conn, op, d, actor):
         owner = string(d,"owner",40)
         if not conn.execute("SELECT 1 FROM users WHERE name=?", (owner,)).fetchone():
             raise ValueError("Choose an existing owner.")
-        values = (customer,title,owner,enum(d.get("stage"),PIPELINE),currency,money(d,"quote"),
-                  money(d,"estimate"),string(d,"action"),due,project)
+        values = (customer,title,owner,enum(d.get("stage"),PIPELINE),currency,money(d,"quote") if d.get("quote") else 0,
+                  money(d,"estimate") if d.get("estimate") else 0,string(d,"action",4000,True),due,project)
         if d.get("lead"):
             if conn.execute("SELECT 1 FROM sales WHERE opportunity=?",(d["lead"],)).fetchone():
                 raise ValueError("This opportunity has already been converted.")
-            require_row(conn,"opportunities",d["lead"])
+            lead_id = require_row(conn,"opportunities",d["lead"])["id"]
             conn.execute("""UPDATE opportunities SET customer=?,title=?,owner=?,stage=?,currency=?,quote=?,
                          estimate=?,action=?,due=?,project=? WHERE id=?""",(*values,d["lead"]))
         else:
-            conn.execute("INSERT INTO opportunities VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",values)
+            lead_id=conn.execute("INSERT INTO opportunities VALUES(NULL,?,?,?,?,?,?,?,?,?,?)",values).lastrowid
+        link_task(conn,"commercial",lead_id,d)
         return
     if op=="convert":
         lead = require_row(conn,"opportunities",d.get("lead"))
@@ -169,6 +191,7 @@ def apply(conn, op, d, actor):
         sale = conn.execute("""INSERT INTO sales(opportunity,customer,title,currency,status,due,project)
                             VALUES(?,?,?,?,'Confirmed','',?)""",
                             tuple(lead[k] for k in ("id","customer","title","currency","project"))).lastrowid
+        conn.execute("INSERT INTO task_resources SELECT 'sales',?,task FROM task_resources WHERE kind='commercial' AND resource=?",(sale,lead["id"]))
         conn.execute("INSERT INTO sale_items VALUES(NULL,?,?,1,?,NULL)",(sale,lead["title"],lead["quote"]))
         return
     sale = require_row(conn,"sales",d.get("sale"))

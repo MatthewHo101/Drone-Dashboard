@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, title TEXT, day TEXT
 CREATE TABLE IF NOT EXISTS charts(id INTEGER PRIMARY KEY, title TEXT, edges TEXT);
 """
 STAGES = ("Ordered", "In transit", "Received", "Cancelled")
-LIMIT = 5 * 1024 * 1024
+LIMIT = 20 * 1024 * 1024
+ENCODED_LIMIT = 4 * ((LIMIT + 2) // 3)
 
 
 def code(secret, step):
@@ -103,9 +104,9 @@ def money(data, key):
 
 def upload(conn, data, actor, source):
     name = string(data, "filename", 160)
-    raw = base64.b64decode(string(data, "file", 7*1024*1024), validate=True)
+    raw = base64.b64decode(string(data, "file", ENCODED_LIMIT), validate=True)
     if not 0 < len(raw) <= LIMIT:
-        raise ValueError("Select a nonempty file up to 5 MiB.")
+        raise ValueError("Select a nonempty file up to 20 MiB.")
     task = data.get("task")
     if task and not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?", (task,)).fetchone():
         raise ValueError("Choose an existing task.")
@@ -245,6 +246,8 @@ def handle(handler, conn, path, actor):
                    "charts":"SELECT c.*,p.project FROM charts c LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
         result.update(commercial.snapshot(conn))
+        result["resource_links"] = [dict(r) for r in conn.execute("""SELECT kind,resource,task FROM task_resources UNION ALL
+            SELECT 'orders',o.id,d.task FROM orders o JOIN documents d ON d.id=o.document WHERE d.task IS NOT NULL""")]
         result["documents"] = []
         result["overview"] = commercial.overview(conn,result)
         for row in conn.execute("""SELECT d.id,d.task,d.name,l.sale,length(d.body) AS size,
@@ -266,7 +269,7 @@ def handle(handler, conn, path, actor):
         return True
     if handler.command != "POST":
         raise LookupError("Unknown workspace operation.")
-    data = payload(handler, 7*1024*1024+4096)
+    data = payload(handler, ENCODED_LIMIT+65536)
     op = path.rsplit("/",1)[-1]
     if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"):
         conn.execute("BEGIN IMMEDIATE")
@@ -294,6 +297,9 @@ def handle(handler, conn, path, actor):
                               (task, actor, body))
         conn.execute("INSERT INTO task_update_details(update_id,work_date,document) VALUES(?,?,?)",
                      (update.lastrowid,day.isoformat(),document))
+    elif op == "resource-task":
+        kind=commercial.enum(data.get("kind"),("orders","sales","commercial","charts","documents"))
+        commercial.link_task(conn,kind,data.get("resource"),data)
     elif op == "order":
         quantity = int(string(data,"quantity",6))
         if not 1 <= quantity <= 999999:
@@ -303,7 +309,7 @@ def handle(handler, conn, path, actor):
             raise ValueError("Choose a supported currency.")
         doc = upload(conn,data,actor,"Purchase invoice")
         purchase = conn.execute("INSERT INTO orders(supplier,invoice,currency,quantity,unit_minor,extra_minor,document,status) VALUES(?,?,?,?,?,?,?,?)",
-            (string(data,"supplier"),string(data,"invoice"),currency,quantity,money(data,"unit"),money(data,"extras"),doc,STAGES[0]))
+            (string(data,"supplier",160,True),string(data,"invoice"),currency,quantity,money(data,"unit"),money(data,"extras"),doc,STAGES[0]))
         category = commercial.enum(data.get("category","General"),("R&D","Commercial","General"))
         conn.execute("INSERT INTO purchase_tags VALUES(?,?,?)",(purchase.lastrowid,category,string(data,"project",100,True)))
     elif op == "order-status":
@@ -330,6 +336,10 @@ def handle(handler, conn, path, actor):
         opportunity = data.get("opportunity") or None
         if opportunity:
             commercial.require_row(conn,"opportunities",opportunity)
+        if data.get("task"):
+            if not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?",(data["task"],)).fetchone():
+                raise ValueError("Choose an existing task.")
+            conn.execute("INSERT INTO meeting_tasks VALUES(?,?)",(meeting.lastrowid,data["task"]))
         conn.execute("INSERT INTO meeting_links VALUES(?,?,?)",(meeting.lastrowid,string(data,"project",100,True),opportunity))
     elif op == "summarize":
         row = conn.execute("SELECT notes FROM meetings WHERE id=?", (data.get("id"),)).fetchone()
@@ -344,6 +354,7 @@ def handle(handler, conn, path, actor):
             if len(nodes) != 2 or not all(node.strip() for node in nodes):
                 raise ValueError("Enter one connection per line, such as Design -> Review.")
         chart = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title"),edges))
+        commercial.link_task(conn,"charts",chart.lastrowid,data)
         conn.execute("INSERT INTO chart_projects VALUES(?,?)",(chart.lastrowid,string(data,"project",100,True)))
     else:
         raise LookupError("Unknown workspace operation.")

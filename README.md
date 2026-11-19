@@ -57,7 +57,7 @@ All signed-in founders can view and edit records. The app records the last edito
 
 Use the **Engineering**, **Commercial**, and **Shared** sidebar groups. Use the project board to assign tasks to founders, group them by project, set due dates, and move cards through four stages. Existing issues appear on this board. Dated tasks and meetings offer **Add to Google Calendar**. Google opens a prefilled all-day event for the founder to review and save. Later dashboard edits require a corresponding calendar edit.
 
-Upload documents or invoices up to 5 MiB each. Choose a task during upload to show the file on its card. Documents and invoices are stored in the SQLite database and included in its backup. For an order, enter the invoice reference, currency, quantity, unit price, tax and shipping. For a mixed-item invoice, use quantity one and its pre-tax subtotal as the unit price. Lysim calculates the total and sums active orders separately by currency. Invoice values are entered manually. Cancelled orders stay in the history.
+Upload documents or invoices up to 20 MiB each. Choose a task during upload to show the file on its card. Documents and invoices are stored in the SQLite database and included in its backup. For an order, enter the invoice reference, currency, quantity, unit price, tax and shipping. For a mixed-item invoice, use quantity one and its pre-tax subtotal as the unit price. Lysim calculates the total and sums active orders separately by currency. Invoice values are entered manually. Cancelled orders stay in the history.
 
 Create flowcharts by entering one directed connection per line such as `Design -> Review` and `Review -> Test`. Reuse a node name to create a branch or cycle.
 
@@ -91,4 +91,4 @@ Home shows the signed-in founder's work and upcoming customer follow-ups. Commer
 
 Log freight or tooling as a one-time cost, record deposits as payments, and allocate purchased units with their proportional share of supplier tax and shipping. Exclude allocated costs from manually entered unit costs. Payments reduce the balance due. Delivered gross profit uses revenue less direct costs and excludes overhead. Cancelled sales are excluded from overview totals.
 
-Photos and sales documents use the existing signed-in file library with a 5 MiB per-file limit. Upload from Sales orders or choose an order on Documents. JPEG and PNG have inline image previews, PDFs open in a viewer tab, and other formats download. Existing supplier orders are now labeled Purchases.
+Photos and sales documents use the existing signed-in file library with a 20 MiB per-file limit. Upload from Sales orders or choose an order on Documents. JPEG and PNG have inline image previews, PDFs open in a viewer tab, and other formats download. Existing supplier orders are now labeled Purchases.

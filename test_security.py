@@ -117,6 +117,21 @@ class WorkspaceSecurity(unittest.TestCase):
                          (sale["id"],"payment",12550,"2026-11-19"))
         self.assertEqual(data["overview"]["totals"]["GBP"]["revenue"],"0")
 
+    def test_task_linked_opportunity_and_invoice(self):
+        cookie=self.login()
+        _,task=self.call("/api/records",dict(kind="issues",title="Pilot",owner="owner",status="Open"),cookie,201)
+        self.call("/api/team/lead",dict(customer="Farm",title="Survey",currency="GBP",owner="owner",
+                  stage="Discovery",task=task["id"],action="Investigate parcel"),cookie)
+        self.call("/api/team/convert",dict(lead=1),cookie)
+        self.call("/api/team/order",dict(invoice="INV-1",currency="GBP",quantity="1",unit="10",extras="0",
+                  file="dGVzdA==",filename="invoice.txt",task=task["id"]),cookie)
+        _,data=self.call("/api/team",cookie=cookie)
+        self.assertEqual((data["opportunities"][0]["quote"],data["opportunities"][0]["estimate"]),(0,0))
+        self.assertEqual(data["orders"][0]["supplier"],"")
+        self.assertEqual({r["kind"] for r in data["resource_links"] if r["task"]==task["id"]},{"commercial","sales","orders"})
+        self.call("/api/team/resource-task",dict(kind="orders",resource=1,task=""),cookie)
+        self.call("/api/team/resource-task",dict(kind="sales",resource=1,task=999),cookie,400)
+
     def test_quote_to_delivery_and_shared_attachments(self):
         cookie = self.login()
         def post(op, fields, status=200):

@@ -17,9 +17,6 @@ function moneyInput(name,label,minor,required=true) {
 function valueInput(name,label,value="",type="text",required=true) {
   return input(name,label,type,(required?"required ":"")+'value="'+esc(value)+'"');
 }
-function projectLink(name) {
-  return name?'<p>Project · '+esc(name)+'</p>':"";
-}
 function saleTotals(sale) {
   const items=team.sale_items.filter(i=>i.sale===sale.id);
   let revenue=0n, costs=0n, paid=0n;
@@ -40,8 +37,9 @@ function margin(profit,revenue) {
 function leadFields(o={}) {
   return (o.id?hiddenId("lead",o.id):"")+valueInput("customer","Customer",o.customer)+valueInput("title","Opportunity",o.title)+
     select("owner","Owner",workspace.users.map(n=>[n,person(n)]),o.owner||workspace.actor)+select("stage","Stage",pipelineStages,o.stage)+
-    select("currency","Currency",currencies,o.currency)+moneyInput("quote","Expected net sales",o.quote)+moneyInput("estimate","Estimated direct cost",o.estimate)+
-    valueInput("action","Next action",o.action)+valueInput("due","Follow-up date",o.due,"date",false)+valueInput("project","Engineering project",o.project,"text",false);
+    select("currency","Currency",currencies,o.currency)+moneyInput("quote","Expected revenue",o.quote??0,false)+moneyInput("estimate","Estimated cost",o.estimate??0,false)+
+    valueInput("due","Follow-up date",o.due,"date",false)+taskSelect(resourceTask("commercial",o.id))+
+    '<label class="wide">Description<textarea name="action" rows="5" maxlength="4000">'+esc(o.action||"")+'</textarea></label>';
 }
 function commercialOverview() {
   const linked=new Map(team.sales.filter(s=>s.opportunity).map(s=>[s.opportunity,s]));
@@ -58,11 +56,11 @@ function commercialOverview() {
     const actions=sale?'<a class="text-link" href="#sales/'+sale.id+'">Open sales order SO-'+sale.id+'</a>':
       form("lead","Edit opportunity",leadFields(o))+(o.stage==="Lost"?"":form("convert","Convert quote to sales order",hiddenId("lead",o.id)));
     return panel(o.title,'<p>'+esc(o.customer)+' · '+esc(sale?"Won":o.stage)+' · '+esc(person(o.owner))+'</p><p>'+esc(o.currency)+' '+cash(o.quote)+
-      ' quoted · '+cash(BigInt(o.quote)-BigInt(o.estimate))+' estimated profit</p><p>'+esc(o.action)+' · '+esc(o.due||"No follow-up date")+'</p>'+
-      projectLink(o.project)+actions);
+      ' expected revenue · '+cash(BigInt(o.quote)-BigInt(o.estimate))+' estimated profit</p><p>'+esc(o.action)+' · '+esc(o.due||"No follow-up date")+'</p>'+
+      taskAssociation("commercial",o.id)+actions);
   }).join("");
-  return (selected?'<a class="text-link" href="#commercial">← All opportunities</a>':"")+'<div class="panel-grid">'+summaries+'</div>'+form("lead","New opportunity",leadFields())+'<h2>Pipeline</h2>'+
-    (cards||'<p class="empty">No opportunities yet.</p>');
+  return (selected?'<a class="text-link" href="#commercial">← All opportunities</a>':"")+'<div class="panel-grid">'+summaries+'</div>'+form("lead","New opportunity",leadFields()) +fold("pipeline","Pipeline ("+team.opportunities.length+")",
+    cards||'<p class="empty">No opportunities yet.</p>',true);
 }
 function itemFields(sale,item={}) {
   return hiddenId("sale",sale.id)+(item.id?hiddenId("item",item.id):"")+valueInput("label","Item",item.label)+
@@ -85,14 +83,14 @@ function salePanel(s) {
     form("item","Edit item",itemFields(s,i))).join("");
   const entryForm=(op,title)=>form(op,title,saleId+input("label","Description")+moneyInput("amount","Amount · "+s.currency)+valueInput("day","Date",dateNow(),"date"));
   return panel("SO-"+s.id+" · "+s.title,'<p>'+esc(s.customer)+' · '+esc(s.status)+(s.due?" · Due "+esc(s.due):"")+'</p>'+
-    (linked?'<p>From opportunity: '+esc(linked.title)+'</p>':"")+projectLink(s.project)+
+    (linked?'<p>From opportunity: '+esc(linked.title)+'</p>':"")+taskAssociation("sales",s.id)+
     '<dl class="details">'+[["Net sales",money(t.revenue)],["Recorded costs",money(t.costs)],["Gross profit",t.complete?money(t.profit):"Awaiting item costs"],
     ["Margin",t.complete?margin(t.profit,t.revenue):"—"],["Payments received",money(t.paid)],["Balance",money(t.balance)]].map(([l,v])=>'<div class="detail-item"><dt>'+l+'</dt><dd>'+v+'</dd></div>').join("")+'</dl>'+
     form("fulfillment","Update delivery",saleId+select("status","Fulfillment",deliveryStages,s.status)+valueInput("due","Delivery date",s.due,"date",false))+
     '<h3>Order items</h3>'+items+form("item","Add item",itemFields(s))+
     '<h3>Costs and payments</h3>'+entries.map(e=>'<p>'+esc(e.day)+' · '+(e.kind==="charge"?"One-time cost":"Payment")+' · '+esc(e.label)+' · '+money(e.amount)+'</p>').join("")+
     costs+entryForm("charge","Add one-time cost")+entryForm("payment","Record payment")+allocations+
-    '<h3>Photos and documents</h3>'+docs.map(attachment).join("")+form("document","Attach file",hiddenId("origin","sale")+saleId+input("file","Photo or order document · up to 5 MiB","file")));
+    '<h3>Photos and documents</h3>'+docs.map(attachment).join("")+form("document","Attach file",hiddenId("origin","sale")+saleId+taskSelect(resourceTask("sales",s.id))+input("file","Photo or order document · up to 20 MiB","file")));
 }
 function salesPage() {
   const selected=Number(location.hash.split("/")[1]);
@@ -102,7 +100,7 @@ function salesPage() {
   }
   return form("sale","New sales order",input("customer","Customer")+input("title","Order description")+select("currency","Currency",currencies)+
     moneyInput("received","Amount received",0,false)+valueInput("paid_on","Payment date",dateNow(),"date")+
-    valueInput("due","Delivery date","","date",false)+valueInput("project","Engineering project","","text",false))+
+    valueInput("due","Delivery date","","date",false)+taskSelect())+
     orderGroups("sales",deliveryStages,team.sales,s=>recordRow("#sales/"+s.id,"SO-"+s.id+" · "+s.title,
       s.customer+" · "+s.currency+" "+cash(saleTotals(s).revenue)));
 }

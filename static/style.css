@@ -256,3 +256,4 @@ dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
   .task-detail > .panel {grid-column:1;}
   .meeting-side {grid-column:2;grid-row:2;}
 }
+.task-detail [data-task-status] { margin:4px 12px 10px 0; }

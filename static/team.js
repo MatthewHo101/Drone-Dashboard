@@ -5,7 +5,7 @@ const stages = ["Open","Done"];
 const orderStages = ["Ordered", "In transit", "Received", "Cancelled"];
 const currencies = ["GBP","HKD","USD","EUR","CNY","AUD","CAD"];
 let displayCurrency="GBP", meetingMonth=dateNow().slice(0,7);
-let workspace, team, purchaseCategory = "", purchaseProject = "";
+let workspace, team, purchaseCategory = "";
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const choices = (values, selected) => values.map(value => {
   const [key,label] = Array.isArray(value) ? value : [value,value];
@@ -48,7 +48,24 @@ function orderGroups(prefix,statuses,records,row){
   }).join("");
 }
 const tasks = () => workspace.records.filter(r=>r.kind==="issues");
-const taskSelect = () => select("task","Associated task",[["","Unassigned"],...tasks().map(t=>[t.id,t.title])]);
+const taskSelect = (selected="") => select("task","Associated task",[["","Unassigned"],...tasks().map(t=>[t.id,t.title])],selected||"");
+function resourceTask(kind,id){
+  return team.resource_links.find(l=>l.kind===kind && l.resource===id)?.task;
+}
+function taskAssociation(kind,id,current=resourceTask(kind,id)){
+  const task=tasks().find(t=>t.id===current);
+  return (task?'<a class="text-link" href="#task/'+task.id+'">'+esc(task.title)+'</a>':"")+
+    form("resource-task",task?"Change linked task":"Link task",hiddenId("kind",kind)+hiddenId("resource",id)+taskSelect(current));
+}
+function relatedRecords(task){
+  const sources={orders:[team.orders,"Purchase"],sales:[team.sales,"Sales order"],commercial:[team.opportunities,"Opportunity"],charts:[team.charts,"Flowchart"]};
+  const rows=team.resource_links.filter(l=>l.task===task).map(l=>{
+    const [records,label]=sources[l.kind];
+    const record=records.find(r=>r.id===l.resource);
+    return record?recordRow("#"+l.kind+"/"+record.id,record.title||record.invoice,label):"";
+  }).join("");
+  return rows?panel("Linked records",rows):"";
+}
 function calendar(title,day,notes="") {
   if (!day) return "";
   const end = new Date(day+"T00:00:00Z");
@@ -121,7 +138,7 @@ function taskDetail() {
   }).join("");
   const otherFiles=[...files.values()].map(doc=>'<article>Attached to task'+attachment(doc)+'</article>').join("");
   const updateFields=hiddenId("task",task.id)+valueInput("work_date","Work date",dateNow(),"date")+
-    input("file","Document (optional, up to 5 MiB)","file","")+
+    input("file","Document (optional, up to 20 MiB)","file","")+
     input("body","What was done?","area",'required maxlength="4000"');
   const linkedMeetings=fold("task-meetings-"+task.id,"Linked meetings",team.meeting_tasks.filter(l=>l.task===task.id).map(l=>{
       const meeting=team.meetings.find(m=>m.id===l.meeting);
@@ -140,7 +157,7 @@ function taskDetail() {
     (task.record_date?"":'<small>The event will use today unless you set a due date.</small>')+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
     encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+
-    '<aside class="meeting-side">'+linkedMeetings+'</aside>'+panel("Work history",form("task-update","Add work update",updateFields)+
+    '<aside class="meeting-side">'+linkedMeetings+'</aside>'+relatedRecords(task.id)+panel("Work history",form("task-update","Add work update",updateFields)+
       (history+otherFiles||'<p>No work updates yet.</p>'))+'</div>';
 }
 function download(doc) {
@@ -189,9 +206,9 @@ function documents() {
       row("File size",doc.size.toLocaleString()+" bytes")+
       (task?row("Task",'<a href="#task/'+task.id+'">'+esc(task.title)+'</a>'):"")+
       (sale?row("Sales order",'<a href="#sales/'+sale.id+'">'+esc(sale.title)+'</a>'):"")+
-      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+reader(doc)+download(doc));
+      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+(doc.update_id?'':taskAssociation('documents',doc.id,doc.task))+reader(doc)+download(doc));
   }
-  return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 5 MiB","file"))+
+  return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 20 MiB","file"))+
     '<div class="document-list">'+team.documents.map(doc=>{
       const details="#documents/"+doc.id;
       const date=doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString():"Not recorded";
@@ -236,9 +253,9 @@ function openMeeting(card){
   card.focus({preventScroll:true});
 }
 function meetings() {
-  return (team.calendar_account?fold("calendar-sync","Google Calendar",esc(team.calendar_account.problem||(team.calendar_account.synced?"Last synced "+new Date(team.calendar_account.synced).toLocaleString():"Awaiting first sync"))):"")+meetingCalendar()+form("meeting","Add meeting notes",input("project","Engineering project","text",'maxlength="100"')+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
+  return (team.calendar_account?fold("calendar-sync","Google Calendar",esc(team.calendar_account.problem||(team.calendar_account.synced?"Last synced "+new Date(team.calendar_account.synced).toLocaleString():"Awaiting first sync"))):"")+meetingCalendar()+form("meeting","Add meeting notes",taskSelect()+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
     input("notes","Notes or transcript","area",'required maxlength="30000"'))+
-    fold("meeting-list","Meetings ("+team.meetings.length+")",team.meetings.map(m=>'<div tabindex="-1" id="meeting-'+m.id+'">'+fold("meeting-"+m.id,m.day+" · "+m.title,agenda(m)+projectLink(m.project)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
+    fold("meeting-list","Meetings ("+team.meetings.length+")",team.meetings.map(m=>'<div tabindex="-1" id="meeting-'+m.id+'">'+fold("meeting-"+m.id,m.day+" · "+m.title,agenda(m)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
     '<details><summary>Meeting notes</summary><pre>'+esc(m.notes)+'</pre></details>'+
     (m.summary?'<h3>AI summary</h3><pre>'+esc(m.summary)+'</pre>':'')+
     '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("")||'<p>No meetings yet.</p>',true);
@@ -263,9 +280,9 @@ function diagram(source) {
     names.map(name=>{const [x,y]=point(name);return '<g><title>'+esc(name)+'</title><rect x="'+(x-75)+'" y="'+(y-17)+'" width="150" height="34" rx="8"/><text x="'+x+'" y="'+(y+4)+'">'+esc(name.length>21?name.slice(0,20)+"…":name)+'</text></g>';}).join("")+'</svg></div>';
 }
 function charts() {
-  return form("chart","Create a flowchart",input("project","Engineering project","text",'maxlength="100"')+input("title","Chart name")+input("edges","Connections, one per line","area",'required maxlength="4000" placeholder="Design -> Review&#10;Review -> Test"'))+
+  return form("chart","Create a flowchart",taskSelect()+input("title","Chart name")+input("edges","Connections, one per line","area",'required maxlength="4000" placeholder="Design -> Review&#10;Review -> Test"'))+
     '<svg class="defs" aria-hidden="true"><defs><marker id="arrow" orient="auto" markerWidth="8" markerHeight="8" refX="7" refY="4"><polygon points="0,0 8,4 0,8"/></marker></defs></svg>'+
-    team.charts.map(c=>panel(c.title,projectLink(c.project)+diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>')).join("");
+    team.charts.filter(c=>!location.hash.split("/")[1]||String(c.id)===location.hash.split("/")[1]).map(c=>panel(c.title,taskAssociation("charts",c.id)+diagram(c.edges)+'<details><summary>Connections</summary><pre>'+esc(c.edges)+'</pre></details>')).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
@@ -278,21 +295,21 @@ function orders() {
     const back='<a class="text-link" href="#orders">← All purchases</a>';
     if(!o)return back+"<p>Purchase unavailable.</p>";
     const total=purchaseTotal(o);
-    return back+panel(o.supplier,projectLink(o.project)+esc(o.category)+" · <small>Invoice "+esc(o.invoice)+"</small><p>"+o.quantity+" × "+amount(BigInt(o.unit_minor))+" + "+
+    return back+panel(o.supplier||o.invoice,taskAssociation("orders",o.id)+esc(o.category)+" · <small>Invoice "+esc(o.invoice)+"</small><p>"+o.quantity+" × "+amount(BigInt(o.unit_minor))+" + "+
       amount(BigInt(o.extra_minor))+" = <strong>"+esc(o.currency)+" "+amount(total)+'</strong></p><label>Status <select data-order="'+o.id+'">'+choices(orderStages,o.status)+'</select></label>'+
       download(team.documents.find(d=>d.id===o.document)));
   }
   const totals=new Map();
-  const filtered=team.orders.filter(o=>(!purchaseCategory||o.category===purchaseCategory)&&(!purchaseProject||o.project===purchaseProject));
+  const filtered=team.orders.filter(o=>(!purchaseCategory||o.category===purchaseCategory));
   for(const o of filtered){
     if(o.status!=="Cancelled")totals.set(o.currency,(totals.get(o.currency)||0n)+purchaseTotal(o));
   }
-  const cards=orderGroups("orders",orderStages,filtered,o=>recordRow("#orders/"+o.id,o.supplier+" · "+o.invoice,o.currency+" "+amount(purchaseTotal(o))));
-  return form("order","Record an invoice",select("category","Category",["General","R&D","Commercial"])+input("project","Project","text",'maxlength="100"')+input("supplier","Supplier")+input("invoice","Invoice reference")+select("currency","Currency",currencies)+
+  const cards=orderGroups("orders",orderStages,filtered,o=>recordRow("#orders/"+o.id,[o.supplier,o.invoice].filter(Boolean).join(" · "),o.currency+" "+amount(purchaseTotal(o))));
+  return form("order","Record an invoice",select("category","Category",["General","R&D","Commercial"])+input("supplier","Supplier (optional)","text","")+input("invoice","Invoice reference")+select("currency","Currency",currencies)+
     input("quantity","Quantity","number",'required min="1" max="999999" value="1"')+
     input("unit","Unit cost","number",'required min="0" step=".01"')+input("extras","Tax and shipping combined","number",'required min="0" step=".01" value="0"')+
-    taskSelect()+input("file","Invoice · up to 5 MiB","file"))+
-    select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+select("purchaseProject","Filter by project",[["","All projects"],...new Set(team.orders.map(o=>o.project).filter(Boolean))],purchaseProject)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
+    taskSelect()+input("file","Invoice · up to 20 MiB","file"))+
+    select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
 const pages={task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
@@ -347,7 +364,7 @@ view.addEventListener("submit",event=>{
     }
     if(op==="task-update" && data.file instanceof File && !data.file.name) delete data.file;
     if(data.file instanceof File){
-      if(!data.file.size||data.file.size>5*1024*1024) throw Error("Choose a nonempty file up to 5 MiB.");
+      if(!data.file.size||data.file.size>20*1024*1024) throw Error("Choose a nonempty file up to 20 MiB.");
       const file=data.file;
       data.filename=file.name;
       data.file=await new Promise((resolve,reject)=>{
@@ -374,7 +391,6 @@ view.addEventListener("submit",event=>{
 view.addEventListener("change",event=>{
   const control=event.target;
   if(control.name==="categoryFilter"){purchaseCategory=control.value;render();return;}
-  if(control.name==="purchaseProject"){purchaseProject=control.value;render();return;}
   if(control.name==="owner"){
     for(const box of control.form.querySelectorAll('[name="liable"]')){
       box.disabled=box.value===control.value;
