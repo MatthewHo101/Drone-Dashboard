@@ -71,9 +71,10 @@ function boardGroup(stage){
     if(state.sort==="Priority")return rank[a.details.priority||"Normal"]-rank[b.details.priority||"Normal"]||byName;
     return (a.record_date||"9999-99-99").localeCompare(b.record_date||"9999-99-99")||byName;
   });
-  return '<details class="panel board-group" data-stage="'+stage+'" '+(state.expanded?"open":"")+'><summary>'+stage+
-    ' <span class="count">'+items.length+'</span></summary><div class="board-sort">'+select("taskSort","Sort by ",["Due date","Name","Priority"],state.sort)+
-    '</div>'+ (items.map(taskRow).join("")||'<p class="empty">No '+stage.toLowerCase()+' tasks.</p>')+'</details>';
+  return '<section class="panel board-shell"><details class="board-group" data-stage="'+stage+'" '+(state.expanded?"open":"")+'><summary>'+stage+
+    ' <span class="count">'+items.length+'</span></summary>'+ (items.map(taskRow).join("")||'<p class="empty">No '+stage.toLowerCase()+' tasks.</p>')+
+    '</details><label class="sort-chip"><span aria-hidden="true">↕</span><select name="taskSort" aria-label="Sort '+stage+' tasks by">'+
+    choices(["Due date","Name","Priority"],state.sort)+'</select></label></section>';
 }
 function board(){
   return '<button type="button" class="create-task" data-create-task>+ Create task</button>'+
@@ -130,6 +131,26 @@ function attachment(doc) {
     doc.preview==="application/pdf"?'<a class="text-link" target="_blank" rel="noopener" href="/previews/'+doc.id+'">View PDF ↗</a>':"";
   return '<div class="attachment">'+preview+download(doc)+(order?'<a class="text-link" href="#sales/'+order.id+'">SO-'+order.id+' · '+esc(order.title)+'</a>':"")+'</div>';
 }
+function reader(doc){
+  if(doc.preview?.startsWith("image/"))return '<img class="reader-image" alt="'+esc(doc.name)+'" src="/previews/'+doc.id+'">';
+  if(doc.reader)return '<div class="reader-body" data-reader="'+doc.id+'">Loading preview…</div>';
+  return '<p>Preview unavailable for this format.</p>';
+}
+function pdfPage(host,page){
+  host.dataset.page=page;
+  const pages=Number(host.dataset.pages);
+  host.innerHTML='<div class="page-controls"><button data-turn="-1" '+(page===1?"disabled":"")+'>Previous</button> Page '+page+' of '+pages+
+    ' <button data-turn="1" '+(page===pages?"disabled":"")+'>Next</button></div><img class="reader-image" alt="Page '+page+'" src="/reader/'+host.dataset.reader+'/'+page+'">';
+}
+async function loadReader(host,excerpt=false){
+  if(!host||host.dataset.loaded)return;
+  host.dataset.loaded="1";
+  try{
+    const result=await api("/reader/"+host.dataset.reader);
+    if(result.pages) {host.dataset.pages=result.pages;pdfPage(host,1);}
+    else host.textContent=excerpt?result.text.slice(0,1000):result.text;
+  }catch(error){host.textContent=error.message;}
+}
 function documents() {
   const id=location.hash.split("/")[1];
   if(id){
@@ -147,7 +168,7 @@ function documents() {
       row("File size",doc.size.toLocaleString()+" bytes")+
       (task?row("Task",'<a href="#task/'+task.id+'">'+esc(task.title)+'</a>'):"")+
       (sale?row("Sales order",'<a href="#sales/'+sale.id+'">'+esc(sale.title)+'</a>'):"")+
-      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+attachment(doc));
+      (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+reader(doc)+download(doc));
   }
   return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 5 MiB","file"))+
     '<div class="document-list">'+team.documents.map(doc=>{
@@ -155,9 +176,11 @@ function documents() {
       const date=doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString():"Not recorded";
       const uploader=doc.uploader?person(doc.uploader):"Not recorded";
       const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
-      const preview=doc.preview?'<a href="'+details+'"><img class="order-photo" loading="lazy" src="'+src+doc.id+'" alt="Preview of '+esc(doc.name)+'"></a>':download(doc);
-      return '<article class="panel entries"><h2><a href="'+details+'">'+esc(doc.name)+'</a></h2><p>Upload date · '+
-        esc(date)+' · Uploaded by · '+esc(uploader)+'</p>'+preview+'</article>';
+      const thumb=doc.preview?'<img loading="lazy" src="'+src+doc.id+'" alt="">':'<span class="file-type">'+esc(doc.name.split(".").pop().slice(0,8).toUpperCase())+'</span>';
+      const peek=doc.preview?'<img loading="lazy" src="'+src+doc.id+'" alt="">':doc.reader?'<div data-reader="'+doc.id+'">Loading preview…</div>':"";
+      return '<article class="doc-card"><a class="doc-hit" href="'+details+'"><span class="doc-thumb">'+thumb+'</span><span><strong>'+esc(doc.name)+
+        '</strong><small>'+esc(date)+' · '+esc(uploader)+'</small></span></a>'+
+        (peek?'<div class="doc-peek" aria-hidden="true">'+peek+'</div>':"")+'</article>';
     }).join("")+'</div>';
 }
 function meetingCalendar(){
@@ -240,6 +263,7 @@ function render() {
   const [key]=location.hash.slice(1).split("/");
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;
   view.innerHTML='<header class="intro"><h1>'+title+'</h1></header>'+display();
+  loadReader(view.querySelector(".reader-body"));
   highlightNavigation();
   if(key==="meetings"){
     const card=document.getElementById("meeting-"+location.hash.split("/")[1]);
@@ -320,10 +344,13 @@ view.addEventListener("change",event=>{
     }
   }
   if(control.name==="taskSort"){
-    const group=control.closest("[data-stage]");
+    const shell=control.closest(".board-shell");
+    const group=shell.querySelector("details");
     boardState[group.dataset.stage].sort=control.value;
-    boardState[group.dataset.stage].expanded=true;
-    group.outerHTML=boardGroup(group.dataset.stage);
+    boardState[group.dataset.stage].expanded=group.open;
+    const stage=group.dataset.stage;
+    shell.outerHTML=boardGroup(stage);
+    view.querySelector('[data-stage="'+stage+'"] + label select').focus();
     return;
   }
   if(control.name==="displayCurrency"){displayCurrency=control.value;render();return;}
@@ -346,7 +373,12 @@ async function searchMeetings(form,page=""){
 view.addEventListener("toggle",event=>{
   if(event.target.isConnected && event.target.dataset.stage)boardState[event.target.dataset.stage].expanded=event.target.open;
 },true);
+for(const trigger of ["pointerover","focusin"]){
+  view.addEventListener(trigger,event=>loadReader(event.target.closest(".doc-card")?.querySelector(".doc-peek [data-reader]"),true));
+}
 view.addEventListener("click",async event=>{
+  const turn=event.target.closest("[data-turn]");
+  if(turn){const host=turn.closest(".reader-body");pdfPage(host,Number(host.dataset.page)+Number(turn.dataset.turn));return;}
   if(event.target.closest("[data-create-task]")){view.querySelector("#create-task").showModal();return;}
   if(event.target.closest("[data-dismiss-task]")){view.querySelector("#create-task").close();return;}
   const link=event.target.closest("[data-link-event]");

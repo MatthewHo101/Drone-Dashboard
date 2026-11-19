@@ -133,7 +133,70 @@ def summarize(notes):
         raise ValueError("Summarization unavailable. Check the Ollama service and model, then retry.") from error
 
 
+def reader_type(name, signature):
+    mime=commercial.preview_type(signature)
+    if mime:
+        return mime
+    suffix=name.lower().rsplit(".",1)[-1]
+    if suffix=="docx" and signature.startswith(b"PK"):
+        return "docx"
+    if suffix=="doc" and signature.startswith(bytes.fromhex("d0cf11e0")):
+        return "doc"
+    return "text" if suffix in ("txt","md","csv","log") else ""
+
+
+def render_document(handler,conn,path):
+    import io
+    import zipfile
+    import xml.etree.ElementTree as ET
+    parts=path.split("/")
+    if len(parts) not in (3,4):
+        raise LookupError("Document unavailable.")
+    doc=conn.execute("SELECT name,body FROM documents WHERE id=?",(parts[2],)).fetchone()
+    if not doc:
+        raise LookupError("Document unavailable.")
+    body=doc["body"]
+    kind=reader_type(doc["name"],body[:8])
+    try:
+        if kind=="application/pdf":
+            if len(parts)==3:
+                info=subprocess.run(["pdfinfo","-"],input=body,capture_output=True,timeout=8,check=True)
+                match=re.search(rb"(?m)^Pages:\s+(\d+)",info.stdout)
+                if not match:
+                    raise ValueError("PDF page count unavailable.")
+                handler.json(200,{"pages":int(match[1])})
+            else:
+                page=int(parts[3])
+                if not 1<=page<=100000:
+                    raise ValueError("Invalid page.")
+                with thumbnail_lock:
+                    image=subprocess.run(["pdftoppm","-f",str(page),"-l",str(page),"-singlefile","-scale-to","1350","-png","-"],
+                        input=body,capture_output=True,timeout=12,check=True)
+                handler.send_body(200,image.stdout,"image/png")
+            return
+        if kind=="docx":
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                part=archive.getinfo("word/document.xml")
+                if part.file_size>12*1024*1024:
+                    raise ValueError("Document is too large to preview.")
+                root=ET.fromstring(archive.read(part))
+            ns="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+            content="\n".join("".join(t.text or "" for t in paragraph.iter(ns+"t")) for paragraph in root.iter(ns+"p"))
+        elif kind=="doc":
+            content=subprocess.run(["antiword","-"],input=body,capture_output=True,timeout=8,check=True).stdout.decode("utf8","replace")
+        elif kind=="text":
+            content=body.decode("utf-8-sig","replace")
+        else:
+            raise ValueError("No inline preview for this file type.")
+        handler.json(200,{"text":content})
+    except (OSError,subprocess.SubprocessError,zipfile.BadZipFile,KeyError,ET.ParseError) as error:
+        raise ValueError("This file could not be previewed.") from error
+
+
 def handle(handler, conn, path, actor):
+    if path.startswith("/reader/") and handler.command=="GET":
+        render_document(handler,conn,path)
+        return True
     if path.startswith(("/downloads/","/previews/","/thumbnails/")) and handler.command == "GET":
         doc = conn.execute("SELECT name,body FROM documents WHERE id=?", (path.split("/")[-1],)).fetchone()
         if not doc:
@@ -192,6 +255,7 @@ def handle(handler, conn, path, actor):
                  LEFT JOIN task_update_details x ON x.document=d.id LEFT JOIN task_updates u ON u.id=x.update_id
                  ORDER BY d.id DESC"""):
             doc = dict(row)
+            doc["reader"]=reader_type(doc["name"],doc["signature"])
             doc["preview"] = commercial.preview_type(doc.pop("signature"))
             result["documents"].append(doc)
         community = os.environ.get("WHATSAPP_COMMUNITY_URL","")
