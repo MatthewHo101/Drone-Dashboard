@@ -203,7 +203,7 @@ function documents() {
     const order=team.orders.find(o=>o.document===doc.id);
     const source=doc.source||(doc.update_id?"Task work update":order?"Purchase invoice":"Not recorded");
     const row=(label,value)=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+value+'</dd></div>';
-    return back+panel(doc.name,'<dl class="details">'+row("Uploaded from",esc(source))+
+    return back+panel(doc.name,'<dl class="details">'+row("Uploaded from",doc.note?'<a href="#notes/'+doc.note+'">Shared note</a>':esc(source))+
       row("Uploaded by",doc.uploader?esc(person(doc.uploader)):"Not recorded")+
       row("Upload time",doc.uploaded_at?esc(new Date(doc.uploaded_at).toLocaleString()):"Not recorded")+
       row("File size",doc.size===null?"Awaiting file":doc.size.toLocaleString()+" bytes")+
@@ -263,12 +263,46 @@ function meetings() {
     (m.summary?'<h3>AI summary</h3><pre>'+esc(m.summary)+'</pre>':'')+
     '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("")||'<p>No meetings yet.</p>',true);
 }
+function noteTitle(note){
+  return note.title || note.contact || note.company || note.body.trim().split("\n")[0].slice(0,80) || "Untitled note";
+}
+function noteForm(note){
+  const n=note || {};
+  const fields=valueInput("title","Title",n.title)+valueInput("contact","Contact name",n.contact)+
+    valueInput("company","Company",n.company)+valueInput("phone","Phone",n.phone,"tel")+
+    valueInput("email","Email",n.email)+
+    '<label class="wide">Notes<textarea name="body" rows="5" maxlength="16000">'+esc(n.body)+'</textarea></label>';
+  return form(note?"edit-note":"note",note?"Edit note":"New note",
+    (note?hiddenId("id",note.id)+hiddenId("version",note.version):"")+fields+(note?"":photoInput()));
+}
+function photoInput(){
+  return input("photos","Photos · JPEG or PNG, up to 20 MiB each","file",'accept="image/jpeg,image/png" multiple');
+}
+function notes(){
+  const id=location.hash.split("/")[1];
+  if(!id){
+    const items=team.notes.map(n=>recordRow("#notes/"+n.id,noteTitle(n),
+      [n.contact,n.company,n.phone,n.email].filter(v=>v && v!==noteTitle(n)).join(" · ") || new Date(n.updated_at).toLocaleDateString())).join("");
+    const search=items?'<input class="note-search" type="search" aria-label="Search notes" placeholder="Search notes or contacts"><p data-no-notes hidden>No matching notes.</p>':"";
+    return noteForm()+panel("Shared notes",search+(items || '<p class="empty">No notes yet.</p>'));
+  }
+  const back='<a class="text-link" href="#notes">← Shared notes</a>';
+  const n=team.notes.find(note=>String(note.id)===id);
+  if(!n)return back+"<p>Note unavailable.</p>";
+  const details=[["Contact",n.contact],["Company",n.company],["Phone",n.phone],["Email",n.email]]
+    .filter(([,value])=>value).map(([label,value])=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join("");
+  const photos=team.documents.filter(doc=>doc.note===n.id).map(doc=>
+    '<a href="#documents/'+doc.id+'"><img loading="lazy" src="/previews/'+doc.id+'" alt="'+esc(doc.name)+'"></a>').join("");
+  return back+panel(noteTitle(n),'<dl class="details">'+details+'</dl><pre>'+esc(n.body)+'</pre><small>Added by '+
+    esc(person(n.author))+' · Updated '+esc(new Date(n.updated_at).toLocaleString())+' by '+esc(person(n.edited_by))+'</small>'+
+    noteForm(n)+form("note-photo","Add photos",hiddenId("id",n.id)+photoInput())+'<div class="note-photos">'+photos+'</div>');
+}
 function charts() {
   const create=form("chart","Create a flowchart",input("title","Chart name")+taskSelect()+
     '<div class="wide"><button type="button" data-open-editor>Open graphical editor</button><flow-canvas editable hidden></flow-canvas></div>');
   const selected=location.hash.split("/")[1];
   return create+team.charts.filter(c=>!selected||String(c.id)===selected).map(c=>
-    fold("chart-"+c.id,c.title,form("edit-chart","Edit flowchart",hiddenId("id",c.id)+'<flow-canvas class="wide" editable data-chart="'+c.id+'"></flow-canvas>')+taskAssociation("charts",c.id)+'<flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
+    fold("chart-"+c.id,c.title,'<div class="chart-actions">'+form("edit-chart","Edit flowchart",hiddenId("id",c.id)+'<flow-canvas class="wide" editable data-chart="'+c.id+'"></flow-canvas>')+taskAssociation("charts",c.id)+'</div><flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
@@ -297,7 +331,7 @@ function orders() {
     taskSelect()+input("file","Invoice · up to 20 MiB","file"))+
     select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
-const pages={finances:["Finances",financeDetails],task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
+const pages={notes:["Notes",notes],finances:["Finances",financeDetails],task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
   const [key]=location.hash.slice(1).split("/");
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;
@@ -333,6 +367,22 @@ async function perform(control,action) {
     control.disabled=false;
   }
 }
+async function encodeFile(file){
+  if(!file.size||file.size>20*1024*1024)throw Error("Choose a nonempty file up to 20 MiB.");
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result).split(",")[1]);
+    reader.onerror=()=>reject(Error("File could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+async function saveNotePhotos(form,id,photos){
+  form.photoKeys ||= new Map();
+  for(const photo of photos){
+    if(!form.photoKeys.has(photo))form.photoKeys.set(photo,crypto.randomUUID());
+    await api("/api/team/note-photo",{id,filename:photo.name,file:await encodeFile(photo),request_key:form.photoKeys.get(photo)});
+  }
+}
 view.addEventListener("submit",event=>{
   event.preventDefault();
   const form=event.target,op=form.dataset.op;
@@ -343,26 +393,36 @@ view.addEventListener("submit",event=>{
   perform(form.querySelector("button.primary") || form.querySelector("button"),async()=>{
     const fields=new FormData(form);
     const data=Object.fromEntries(fields);
+    if(op==="note" || op==="note-photo"){
+      const photos=Array.from(form.elements.photos.files);
+      for(const photo of photos){
+        if(!photo.size || photo.size>20*1024*1024 || !/\.(png|jpe?g)$/i.test(photo.name))
+          throw Error("Choose JPEG or PNG photos up to 20 MiB each.");
+      }
+      delete data.photos;
+      let id=data.id;
+      if(op==="note"){
+        form.dataset.key ||= crypto.randomUUID();
+        id=(await api("/api/team/note",{...data,request_key:form.dataset.key})).id;
+      }
+      try { await saveNotePhotos(form,id,photos); }
+      catch(error){ throw Error("The note is saved. "+error.message+" Retry to finish uploading photos."); }
+      location.hash="#notes/"+id;
+      return;
+    }
     if(op==="chart" || op==="edit-chart") {
       data.graph=form.querySelector("flow-canvas").graph;
       if(op==="edit-chart")data.previous=team.charts.find(c=>String(c.id)===data.id).graph;
     }
     if(op==="task"||op==="edit-task")data.liable=fields.getAll("liable");
-    if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"].includes(op)) {
+    if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update","edit-note"].includes(op)) {
       form.dataset.key ||= crypto.randomUUID();
       data.request_key=form.dataset.key;
     }
     if(data.file instanceof File && !data.file.name) delete data.file;
     if(data.file instanceof File){
-      if(!data.file.size||data.file.size>20*1024*1024) throw Error("Choose a nonempty file up to 20 MiB.");
-      const file=data.file;
-      data.filename=file.name;
-      data.file=await new Promise((resolve,reject)=>{
-        const reader=new FileReader();
-        reader.onload=()=>resolve(String(reader.result).split(",")[1]);
-        reader.onerror=()=>reject(Error("File could not be read."));
-        reader.readAsDataURL(file);
-      });
+      data.filename=data.file.name;
+      data.file=await encodeFile(data.file);
     }
     if(op==="task") {
       const saved=await api("/api/records",{...data,kind:"issues",status:"Open"});
@@ -377,6 +437,14 @@ view.addEventListener("submit",event=>{
       if(op==="meeting" && data.day)meetingMonth=data.day.slice(0,7);
     }
   });
+});
+view.addEventListener("input",event=>{
+  if(!event.target.matches(".note-search"))return;
+  const query=event.target.value.trim().toLowerCase();
+  const visible=new Set(team.notes.filter(n=>[n.title,n.contact,n.company,n.phone,n.email,n.body]
+    .some(value=>value.toLowerCase().includes(query))).map(n=>"#notes/"+n.id));
+  for(const row of view.querySelectorAll(".record-row"))row.hidden=!visible.has(row.getAttribute("href"));
+  view.querySelector("[data-no-notes]").hidden=visible.size>0;
 });
 view.addEventListener("change",event=>{
   const control=event.target;

@@ -294,3 +294,9 @@ dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}
 .flow-palette svg {fill:#edf5df;stroke:#58735c;stroke-width:2;}
 .flow-link.chosen {stroke:#2457ac;}
 .flow-guides path {stroke:#287cb2;stroke-dasharray:4 4;vector-effect:non-scaling-stroke;pointer-events:none;}
+.chart-actions {display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.chart-actions .workspace-action,.chart-actions .text-link {margin:0;}
+.chart-actions .workspace-action {padding:5px 10px;}
+.note-photos {display:flex;flex-wrap:wrap;gap:8px;}
+.note-photos img {display:block;width:100px;height:80px;object-fit:cover;border-radius:6px;}
+.note-search {width:min(100%,26rem);margin-bottom:10px;} .entries .record-row[hidden],.entries [data-no-notes][hidden] {display:none;}

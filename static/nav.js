@@ -3,7 +3,7 @@ const navigation = document.querySelector(".sidebar nav");
 navigation.innerHTML = '<a href="/#overview">Home</a>'+
   '<details open><summary>Engineering</summary><a href="/team#board">Tasks</a><a href="/team#charts">Flowcharts</a></details>'+
   '<details open><summary>Commercial</summary><a href="/team#commercial">Commercial overview</a><a href="/team#sales">Sales orders</a><a href="/team#orders">Purchases</a></details>'+
-  '<details open><summary>Shared</summary><a href="/team#documents">Documents</a><a href="/team#meetings">Meetings</a></details>';
+  '<details open><summary>Shared</summary><a href="/team#notes">Notes</a><a href="/team#documents">Documents</a><a href="/team#meetings">Meetings</a></details>';
 const profile=document.createElement("a");
 profile.className="identity";
 profile.href="/security";

@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, supplier TEXT, invoice
 CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, title TEXT, day TEXT, notes TEXT, summary TEXT);
 CREATE TABLE IF NOT EXISTS charts(id INTEGER PRIMARY KEY, title TEXT, edges TEXT);
 CREATE TABLE IF NOT EXISTS chart_layout(chart INTEGER PRIMARY KEY REFERENCES charts(id), graph TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS shared_notes(
+ id INTEGER PRIMARY KEY, title TEXT, contact TEXT, company TEXT, phone TEXT, email TEXT, body TEXT,
+ author TEXT NOT NULL, edited_by TEXT NOT NULL, updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+ request_key TEXT NOT NULL, UNIQUE(author,request_key));
+CREATE TABLE IF NOT EXISTS note_photos(document INTEGER PRIMARY KEY REFERENCES documents(id),
+ note INTEGER NOT NULL REFERENCES shared_notes(id));
 """
 STAGES = ("Ordered", "In transit", "Received", "Cancelled")
 LIMIT = 20 * 1024 * 1024
@@ -244,7 +250,7 @@ def handle(handler, conn, path, actor):
     if not path.startswith("/api/team"):
         return False
     if path == "/api/team" and handler.command == "GET":
-        queries = {"task_updates":"""SELECT u.*,d.work_date,d.document FROM task_updates u
+        queries = {"notes":"SELECT id,title,contact,company,phone,email,body,author,edited_by,updated_at,version FROM shared_notes", "task_updates":"""SELECT u.*,d.work_date,d.document FROM task_updates u
                          LEFT JOIN task_update_details d ON d.update_id=u.id""", "orders":"SELECT o.*,coalesce(t.category,'General') AS category,coalesce(t.project,'') AS project FROM orders o LEFT JOIN purchase_tags t ON t.purchase=o.id",
                    "charts":"SELECT c.*,g.graph,p.project FROM charts c LEFT JOIN chart_layout g ON g.chart=c.id LEFT JOIN chart_projects p ON p.chart=c.id", "meetings":"SELECT m.*,l.project,l.opportunity FROM meetings m LEFT JOIN meeting_links l ON l.meeting=m.id"}
         result = {key:[dict(row) for row in conn.execute(sql+" ORDER BY id DESC")] for key,sql in queries.items()}
@@ -253,10 +259,10 @@ def handle(handler, conn, path, actor):
             SELECT 'orders',o.id,d.task FROM orders o JOIN documents d ON d.id=o.document WHERE d.task IS NOT NULL""")]
         result["documents"] = []
         result["overview"] = commercial.overview(conn,result)
-        for row in conn.execute("""SELECT d.id,d.task,d.name,l.sale,length(d.body) AS size,
+        for row in conn.execute("""SELECT d.id,d.task,d.name,l.sale,n.note,length(d.body) AS size,
                  substr(d.body,1,8) AS signature,i.source,coalesce(i.actor,u.author) AS uploader,
                  coalesce(i.uploaded_at,u.posted_at) AS uploaded_at,x.update_id
-                 FROM documents d LEFT JOIN sale_docs l ON l.document=d.id
+                 FROM documents d LEFT JOIN note_photos n ON n.document=d.id LEFT JOIN sale_docs l ON l.document=d.id
                  LEFT JOIN upload_info i ON i.document=d.id
                  LEFT JOIN task_update_details x ON x.document=d.id LEFT JOIN task_updates u ON u.id=x.update_id
                  ORDER BY d.id DESC"""):
@@ -274,19 +280,44 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, ENCODED_LIMIT+65536)
     op = path.rsplit("/",1)[-1]
-    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"):
+    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update","edit-note","note-photo"):
         conn.execute("BEGIN IMMEDIATE")
         token = string(data,"request_key",64,True)
         if token:
             if not conn.execute("INSERT OR IGNORE INTO commercial_writes VALUES(?,?,?)",(token,op,actor)).rowcount:
                 handler.json(200,{"saved":True})
                 return True
-        if op not in ("document","task-update"):
+        if op not in ("document","task-update","edit-note","note-photo"):
             commercial.apply(conn,op,data,actor)
             conn.commit()
             handler.json(200,{"saved":True})
             return True
-    if op == "document":
+    if op in ("note","edit-note"):
+        values = tuple(string(data,k,limit,True) for k,limit in
+                       (("title",160),("contact",160),("company",160),("phone",80),("email",254),("body",16000)))
+        stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+        if op == "note":
+            token = string(data,"request_key",64)
+            conn.execute(f"""INSERT INTO shared_notes(title,contact,company,phone,email,body,author,edited_by,request_key,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,{stamp}) ON CONFLICT(author,request_key) DO NOTHING""", (*values,actor,actor,token))
+            note_id = conn.execute("SELECT id FROM shared_notes WHERE author=? AND request_key=?",(actor,token)).fetchone()[0]
+            conn.commit()
+            handler.json(200,{"id":note_id})
+            return True
+        if not conn.execute(f"""UPDATE shared_notes SET title=?,contact=?,company=?,phone=?,email=?,body=?,edited_by=?,
+                updated_at={stamp},version=version+1 WHERE id=? AND version=?""",
+                (*values,actor,data.get("id"),data.get("version"))).rowcount:
+            raise ValueError("This note changed. Reopen it before saving your edits.")
+    elif op == "note-photo":
+        if not conn.execute("SELECT 1 FROM shared_notes WHERE id=?",(data.get("id"),)).fetchone():
+            raise LookupError("Note not found.")
+        file = string(data,"file",ENCODED_LIMIT)
+        signature = base64.b64decode(file[:12],validate=True)
+        if not commercial.preview_type(signature).startswith("image/"):
+            raise ValueError("Choose a JPEG or PNG photo.")
+        doc = upload(conn,{"file":file,"filename":data.get("filename")},actor,"Shared note")
+        conn.execute("INSERT INTO note_photos VALUES(?,?)",(doc,data["id"]))
+    elif op == "document":
         source = "Sales order" if data.get("origin")=="sale" and data.get("sale") else "Documents"
         upload(conn,data,actor,source)
     elif op == "draft-file":
