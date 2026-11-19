@@ -94,7 +94,7 @@ def string(data, name, maximum=160, optional=False):
 
 def money(data, key):
     try:
-        value = Decimal(string(data, key, 20))
+        value = Decimal(string(data, key, 20,True) or "0")
         if not value.is_finite() or not 0 <= value <= 100000000 or value != value.quantize(Decimal(".01")):
             raise ValueError()
         return int(value * 100)
@@ -103,10 +103,12 @@ def money(data, key):
 
 
 def upload(conn, data, actor, source):
-    name = string(data, "filename", 160)
-    raw = base64.b64decode(string(data, "file", ENCODED_LIMIT), validate=True)
-    if not 0 < len(raw) <= LIMIT:
-        raise ValueError("Select a nonempty file up to 20 MiB.")
+    name = string(data,"filename",160,True) or "Untitled document"
+    raw = None
+    if data.get("file"):
+        raw=base64.b64decode(string(data,"file",ENCODED_LIMIT),validate=True)
+        if not 0<len(raw)<=LIMIT:
+            raise ValueError("Select a nonempty file up to 20 MiB.")
     task = data.get("task")
     if task and not conn.execute("SELECT 1 FROM records WHERE kind='issues' AND id=?", (task,)).fetchone():
         raise ValueError("Choose an existing task.")
@@ -154,7 +156,7 @@ def render_document(handler,conn,path):
     if len(parts) not in (3,4):
         raise LookupError("Document unavailable.")
     doc=conn.execute("SELECT name,body FROM documents WHERE id=?",(parts[2],)).fetchone()
-    if not doc:
+    if not doc or doc["body"] is None:
         raise LookupError("Document unavailable.")
     body=doc["body"]
     kind=reader_type(doc["name"],body[:8])
@@ -200,7 +202,7 @@ def handle(handler, conn, path, actor):
         return True
     if path.startswith(("/downloads/","/previews/","/thumbnails/")) and handler.command == "GET":
         doc = conn.execute("SELECT name,body FROM documents WHERE id=?", (path.split("/")[-1],)).fetchone()
-        if not doc:
+        if not doc or doc["body"] is None:
             raise LookupError("Document not found.")
         import security
         if path.startswith("/thumbnails/"):
@@ -258,8 +260,8 @@ def handle(handler, conn, path, actor):
                  LEFT JOIN task_update_details x ON x.document=d.id LEFT JOIN task_updates u ON u.id=x.update_id
                  ORDER BY d.id DESC"""):
             doc = dict(row)
-            doc["reader"]=reader_type(doc["name"],doc["signature"])
-            doc["preview"] = commercial.preview_type(doc.pop("signature"))
+            doc["reader"]=reader_type(doc["name"],doc["signature"] or b"")
+            doc["preview"] = commercial.preview_type(doc.pop("signature") or b"")
             result["documents"].append(doc)
         community = os.environ.get("WHATSAPP_COMMUNITY_URL","")
         import google_calendar
@@ -286,12 +288,21 @@ def handle(handler, conn, path, actor):
     if op == "document":
         source = "Sales order" if data.get("origin")=="sale" and data.get("sale") else "Documents"
         upload(conn,data,actor,source)
+    elif op == "draft-file":
+        if data.get("file"):
+            raw=base64.b64decode(string(data,"file",ENCODED_LIMIT),validate=True)
+            if not 0<len(raw)<=LIMIT:
+                raise ValueError("Invalid file size.")
+            if not conn.execute("UPDATE documents SET name=?,body=? WHERE id=? AND body IS NULL",
+                                (string(data,"filename",160),raw,data.get("document"))).rowcount:
+                raise ValueError("Draft unavailable.")
+            conn.execute("UPDATE upload_info SET actor=?,uploaded_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE document=?",(actor,data["document"]))
     elif op == "task-update":
         task = data.get("task")
         if not conn.execute("SELECT 1 FROM records WHERE id=? AND kind='issues'", (task,)).fetchone():
             raise ValueError("Choose an existing task.")
-        day = date.fromisoformat(string(data,"work_date",10)) if "work_date" in data else date.today()
-        body = string(data,"body",4000)
+        day = date.fromisoformat(string(data,"work_date",10)) if data.get("work_date") else date.today()
+        body = string(data,"body",4000,True)
         document = upload(conn,data,actor,"Task work update") if "file" in data else None
         update = conn.execute("INSERT INTO task_updates(task,author,body) VALUES(?,?,?)",
                               (task, actor, body))
@@ -301,15 +312,15 @@ def handle(handler, conn, path, actor):
         kind=commercial.enum(data.get("kind"),("orders","sales","commercial","charts","documents"))
         commercial.link_task(conn,kind,data.get("resource"),data)
     elif op == "order":
-        quantity = int(string(data,"quantity",6))
+        quantity = int(string(data,"quantity",6,True) or "1")
         if not 1 <= quantity <= 999999:
             raise ValueError("Enter a positive quantity.")
-        currency = string(data,"currency",3)
+        currency = string(data,"currency",3,True) or "GBP"
         if currency not in ("HKD","USD","EUR","GBP","CNY","AUD","CAD"):
             raise ValueError("Choose a supported currency.")
         doc = upload(conn,data,actor,"Purchase invoice")
         purchase = conn.execute("INSERT INTO orders(supplier,invoice,currency,quantity,unit_minor,extra_minor,document,status) VALUES(?,?,?,?,?,?,?,?)",
-            (string(data,"supplier",160,True),string(data,"invoice"),currency,quantity,money(data,"unit"),money(data,"extras"),doc,STAGES[0]))
+            (string(data,"supplier",160,True),string(data,"invoice",160,True) or "Untitled invoice",currency,quantity,money(data,"unit"),money(data,"extras"),doc,STAGES[0]))
         category = commercial.enum(data.get("category","General"),("R&D","Commercial","General"))
         conn.execute("INSERT INTO purchase_tags VALUES(?,?,?)",(purchase.lastrowid,category,string(data,"project",100,True)))
     elif op == "order-status":
@@ -330,9 +341,9 @@ def handle(handler, conn, path, actor):
         if not conn.execute("UPDATE meetings SET notes=?,summary='' WHERE id=?",(notes,data.get("meeting"))).rowcount:
             raise LookupError("Meeting unavailable.")
     elif op == "meeting":
-        day = date.fromisoformat(string(data,"day",10))
+        day = date.fromisoformat(data["day"]).isoformat() if data.get("day") else ""
         meeting = conn.execute("INSERT INTO meetings(title,day,notes,summary) VALUES(?,?,?,?)",
-                     (string(data,"title"),day.isoformat(),string(data,"notes",30000),""))
+                     (string(data,"title",160,True) or "Untitled meeting",day,string(data,"notes",30000,True),""))
         opportunity = data.get("opportunity") or None
         if opportunity:
             commercial.require_row(conn,"opportunities",opportunity)
@@ -348,12 +359,12 @@ def handle(handler, conn, path, actor):
         summary = summarize(row["notes"])
         conn.execute("UPDATE meetings SET summary=? WHERE id=?", (summary,data["id"]))
     elif op == "chart":
-        edges = string(data,"edges",4000)
+        edges = string(data,"edges",4000,True)
         for line in edges.splitlines():
             nodes = line.split("->")
             if len(nodes) != 2 or not all(node.strip() for node in nodes):
                 raise ValueError("Enter one connection per line, such as Design -> Review.")
-        chart = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title"),edges))
+        chart = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title",160,True) or "Untitled flowchart",edges))
         commercial.link_task(conn,"charts",chart.lastrowid,data)
         conn.execute("INSERT INTO chart_projects VALUES(?,?)",(chart.lastrowid,string(data,"project",100,True)))
     else:

@@ -75,13 +75,13 @@ class WorkspaceSecurity(unittest.TestCase):
                           request_key=text)
             for _ in range(2):
                 self.call("/api/team/task-update", update, cookie)
-        self.call("/api/team/task-update", dict(task=task_id, body=" "), cookie, 400)
+        self.call("/api/team/task-update", dict(task=task_id, body=" "), cookie)
         self.call("/api/team/task-update", dict(task=9999, body="Missing task"), cookie, 400)
         self.call("/api/team/document", dict(task=task_id, filename="notes.txt",
                   file=base64.b64encode(b"Measurements").decode()), cookie)
         _, snapshot = self.call("/api/team", cookie=cookie)
         history = snapshot["task_updates"]
-        self.assertEqual([u["body"] for u in history], ["Measurements recorded", "Frame inspected"])
+        self.assertEqual([u["body"] for u in history], ["", "Measurements recorded", "Frame inspected"])
         self.assertTrue(all(u["task"] == task_id and u["author"] == "owner"
                             and u["posted_at"].endswith("Z") for u in history))
         self.assertEqual(snapshot["documents"][0]["task"], task_id)
@@ -131,6 +131,21 @@ class WorkspaceSecurity(unittest.TestCase):
         self.assertEqual({r["kind"] for r in data["resource_links"] if r["task"]==task["id"]},{"commercial","sales","orders"})
         self.call("/api/team/resource-task",dict(kind="orders",resource=1,task=""),cookie)
         self.call("/api/team/resource-task",dict(kind="sales",resource=1,task=999),cookie,400)
+
+    def test_blank_additions_and_finance_lines(self):
+        cookie=self.login()
+        self.call("/api/records",dict(kind="issues",status="Open"),cookie,201)
+        for op in ("lead","sale","order","document","meeting","chart"):
+            self.call("/api/team/"+op,{},cookie)
+        for op in ("item","charge","payment"):
+            self.call("/api/team/"+op,dict(sale=1),cookie)
+        self.call("/api/team/draft-file",dict(document=1,file="dGVzdA==",filename="test.txt"),cookie)
+        self.call("/api/team/fulfillment",dict(sale=1,status="Delivered"),cookie)
+        _,snapshot=self.call("/api/team",cookie=cookie)
+        self.assertEqual(snapshot["meetings"][0]["day"],"")
+        self.assertEqual(snapshot["documents"][-1]["size"],4)
+        self.assertEqual(len(snapshot["overview"]["lines"]),3)
+        self.assertEqual(snapshot["overview"]["totals"]["GBP"],dict(revenue="0",cost="0"))
 
     def test_quote_to_delivery_and_shared_attachments(self):
         cookie = self.login()

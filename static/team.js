@@ -11,7 +11,8 @@ const choices = (values, selected) => values.map(value => {
   const [key,label] = Array.isArray(value) ? value : [value,value];
   return '<option value="'+esc(key)+'" '+(key===selected?"selected":"")+'>'+esc(label)+'</option>';
 }).join("");
-function input(name,label,type="text",attributes="required") {
+function input(name,label,type="text",attributes="") {
+  attributes=attributes.replace(/\brequired\b/g,"");
   const control = type==="area" ? '<textarea name="'+name+'" '+attributes+'></textarea>' :
     '<input type="'+type+'" name="'+name+'" '+attributes+'>';
   return '<label>'+label+control+'</label>';
@@ -97,7 +98,7 @@ function taskRow(task){
       '<span>'+esc(doc.name)+'</span></a>';
   }).join("");
   return '<article class="board-row"><div><a class="task-title" href="#task/'+task.id+'">'+esc(task.title)+'</a>'+
-    '<p>Owner · '+esc(person(task.owner))+'　 Liable · '+esc(people)+'</p></div><div><strong>'+esc(priority)+
+    '<p>Owner · '+esc(person(task.owner))+'　 Liable · '+esc(people)+'</p></div><div><strong class="priority-pill priority-'+esc(priority.toLowerCase())+'">'+esc(priority)+
     ' priority</strong><p>Due · '+esc(task.record_date||"Unscheduled")+'</p></div><div class="board-files">'+files+'</div></article>';
 }
 function boardGroup(stage){
@@ -161,6 +162,7 @@ function taskDetail() {
       (history+otherFiles||'<p>No work updates yet.</p>'))+'</div>';
 }
 function download(doc) {
+  if(doc?.size===null)return '<a class="text-link" href="#documents/'+doc.id+'">Draft · add file</a>';
   return '<a class="text-link" href="/downloads/'+doc.id+'">'+esc(doc.name)+' ↓</a>';
 }
 function attachment(doc) {
@@ -170,6 +172,7 @@ function attachment(doc) {
   return '<div class="attachment">'+preview+download(doc)+(order?'<a class="text-link" href="#sales/'+order.id+'">SO-'+order.id+' · '+esc(order.title)+'</a>':"")+'</div>';
 }
 function reader(doc){
+  if(doc.size===null)return form("draft-file","Add file",hiddenId("document",doc.id)+input("file","File","file"));
   if(doc.preview?.startsWith("image/"))return '<img class="reader-image" alt="'+esc(doc.name)+'" src="/previews/'+doc.id+'">';
   if(doc.reader)return '<div class="reader-body" data-reader="'+doc.id+'">Loading preview…</div>';
   return '<p>Preview unavailable for this format.</p>';
@@ -203,7 +206,7 @@ function documents() {
     return back+panel(doc.name,'<dl class="details">'+row("Uploaded from",esc(source))+
       row("Uploaded by",doc.uploader?esc(person(doc.uploader)):"Not recorded")+
       row("Upload time",doc.uploaded_at?esc(new Date(doc.uploaded_at).toLocaleString()):"Not recorded")+
-      row("File size",doc.size.toLocaleString()+" bytes")+
+      row("File size",doc.size===null?"Awaiting file":doc.size.toLocaleString()+" bytes")+
       (task?row("Task",'<a href="#task/'+task.id+'">'+esc(task.title)+'</a>'):"")+
       (sale?row("Sales order",'<a href="#sales/'+sale.id+'">'+esc(sale.title)+'</a>'):"")+
       (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+(doc.update_id?'':taskAssociation('documents',doc.id,doc.task))+reader(doc)+download(doc));
@@ -261,6 +264,7 @@ function meetings() {
     '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("")||'<p>No meetings yet.</p>',true);
 }
 function diagram(source) {
+  if(!source)return "<p>No connections yet.</p>";
   const edges=source.split(/\r?\n/).map(line=>line.split("->").map(s=>s.trim()));
   const names=[...new Set(edges.flat())];
   // Place nodes around an ellipse so branches and cycles share the same nodes.
@@ -311,7 +315,7 @@ function orders() {
     taskSelect()+input("file","Invoice · up to 20 MiB","file"))+
     select("categoryFilter","Filter by category",[["","All categories"],"General","R&D","Commercial"],purchaseCategory)+panel("Committed costs",[...totals].map(([currency,total])=>'<strong>'+esc(currency)+" "+amount(total)+'</strong>').join(" · ")||"No active orders.")+cards;
 }
-const pages={task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
+const pages={finances:["Finances",financeDetails],task:["Task details",taskDetail],board:["Tasks",board],meetings:["Meetings",meetings],charts:["Flowcharts",charts],documents:["Documents",documents],orders:["Purchases",orders],commercial:["Commercial overview",commercialOverview],sales:["Sales orders",salesPage]};
 function render() {
   const [key]=location.hash.slice(1).split("/");
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;
@@ -362,7 +366,7 @@ view.addEventListener("submit",event=>{
       form.dataset.key ||= crypto.randomUUID();
       data.request_key=form.dataset.key;
     }
-    if(op==="task-update" && data.file instanceof File && !data.file.name) delete data.file;
+    if(data.file instanceof File && !data.file.name) delete data.file;
     if(data.file instanceof File){
       if(!data.file.size||data.file.size>20*1024*1024) throw Error("Choose a nonempty file up to 20 MiB.");
       const file=data.file;
@@ -384,7 +388,7 @@ view.addEventListener("submit",event=>{
     }
     else {
       await api("/api/team/"+op,data);
-      if(op==="meeting")meetingMonth=data.day.slice(0,7);
+      if(op==="meeting" && data.day)meetingMonth=data.day.slice(0,7);
     }
   });
 });

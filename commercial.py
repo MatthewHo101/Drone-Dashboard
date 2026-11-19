@@ -67,17 +67,23 @@ def overview(conn, data):
     revenue = {code:0 for code in CURRENCIES}
     cost = revenue.copy()
     delivered = {s["id"]:s["currency"] for s in data["sales"] if s["status"]=="Delivered"}
+    lines=[]
+    def line(kind,code,label,quantity,unit,extra,route):
+        amount=quantity*unit+extra
+        lines.append(dict(kind=kind,currency=code,label=label,quantity=quantity,unit=str(unit),extra=str(extra),amount=str(amount),route=route))
+        return amount
     for item in data["sale_items"]:
         code = delivered.get(item["sale"])
         if code:
-            revenue[code] += item["quantity"] * item["price"]
-            cost[code] += item["quantity"] * (item["cost"] or 0)
+            revenue[code] += line("Revenue",code,item["label"],item["quantity"],item["price"],0,"sales/"+str(item["sale"]))
+            if item["cost"] is not None:
+                cost[code] += line("Cost",code,item["label"],item["quantity"],item["cost"],0,"sales/"+str(item["sale"]))
     for entry in data["sale_entries"]:
         if entry["sale"] in delivered and entry["kind"]=="charge":
-            cost[delivered[entry["sale"]]] += entry["amount"]
+            cost[delivered[entry["sale"]]] += line("Cost",delivered[entry["sale"]],entry["label"],1,entry["amount"],0,"sales/"+str(entry["sale"]))
     for order in data["orders"]:
         if order["status"] != "Cancelled":
-            cost[order["currency"]] += order["quantity"] * order["unit_minor"] + order["extra_minor"]
+            cost[order["currency"]] += line("Cost",order["currency"],order["invoice"],order["quantity"],order["unit_minor"],order["extra_minor"],"orders/"+str(order["id"]))
     row = conn.execute("SELECT rate_day,rates FROM fx_cache WHERE id=1").fetchone()
     rates = json.loads(row["rates"]) if row else {}
     def convert(amounts, target):
@@ -90,7 +96,7 @@ def overview(conn, data):
                         return None
                     total += Decimal(amount) * Decimal(rates[target]) / Decimal(rates[source])
             return str(total.quantize(Decimal(1), rounding=ROUND_HALF_UP))
-    return {"rate_day":row["rate_day"] if row else None,
+    return {"lines":lines,"rates":rates,"rate_day":row["rate_day"] if row else None,
             "totals":{code:{"revenue":convert(revenue,code),"cost":convert(cost,code)} for code in CURRENCIES}}
 
 
@@ -152,9 +158,9 @@ def link_task(conn,kind,resource,data):
 def apply(conn, op, d, actor):
     from team import string, money
     if op in ("lead","sale"):
-        customer = string(d,"customer")
-        title = string(d,"title")
-        currency = enum(d.get("currency"),CURRENCIES)
+        customer = string(d,"customer",160,True)
+        title = string(d,"title",160,True) or ("Untitled opportunity" if op=="lead" else "Untitled sales order")
+        currency = enum(d.get("currency") or "GBP",CURRENCIES)
         project = string(d,"project",100,True)
         due = day(string(d,"due",10,True))
         if op=="sale":
@@ -163,14 +169,14 @@ def apply(conn, op, d, actor):
             link_task(conn,"sales",sale,d)
             received = money(d,"received") if d.get("received") else 0
             if received:
-                paid_on = date.fromisoformat(string(d,"paid_on",10)).isoformat()
+                paid_on = date.fromisoformat(string(d,"paid_on",10,True) or date.today().isoformat()).isoformat()
                 conn.execute("INSERT INTO sale_entries(sale,kind,label,amount,day) VALUES(?,?,?,?,?)",
                              (sale,"payment","Initial payment",received,paid_on))
             return
-        owner = string(d,"owner",40)
+        owner = string(d,"owner",40,True) or actor
         if not conn.execute("SELECT 1 FROM users WHERE name=?", (owner,)).fetchone():
             raise ValueError("Choose an existing owner.")
-        values = (customer,title,owner,enum(d.get("stage"),PIPELINE),currency,money(d,"quote") if d.get("quote") else 0,
+        values = (customer,title,owner,enum(d.get("stage") or "Discovery",PIPELINE),currency,money(d,"quote") if d.get("quote") else 0,
                   money(d,"estimate") if d.get("estimate") else 0,string(d,"action",4000,True),due,project)
         if d.get("lead"):
             if conn.execute("SELECT 1 FROM sales WHERE opportunity=?",(d["lead"],)).fetchone():
@@ -199,10 +205,10 @@ def apply(conn, op, d, actor):
         conn.execute("UPDATE sales SET status=?,due=? WHERE id=?",(enum(d.get("status"),FULFILLMENT),
                      day(string(d,"due",10,True)),sale["id"]))
     elif op=="item":
-        quantity = int(string(d,"quantity",6))
+        quantity = int(string(d,"quantity",6,True) or "1")
         if not 1<=quantity<=999999:
             raise ValueError("Enter a positive quantity.")
-        values = (string(d,"label"),quantity,money(d,"price"),money(d,"cost") if d.get("cost") else None)
+        values = (string(d,"label",160,True) or "Untitled item",quantity,money(d,"price"),money(d,"cost") if d.get("cost") else None)
         if d.get("item"):
             if not conn.execute("UPDATE sale_items SET label=?,quantity=?,price=?,cost=? WHERE id=? AND sale=?",
                                 (*values,d["item"],sale["id"])).rowcount:
@@ -211,16 +217,14 @@ def apply(conn, op, d, actor):
             conn.execute("INSERT INTO sale_items(sale,label,quantity,price,cost) VALUES(?,?,?,?,?)",(sale["id"],*values))
     elif op in ("charge","payment"):
         amount = money(d,"amount")
-        if amount <= 0:
-            raise ValueError("Enter an amount above zero.")
-        conn.execute("INSERT INTO sale_entries VALUES(NULL,?,?,?,?,?)",(sale["id"],op,string(d,"label"),amount,
-                     date.fromisoformat(string(d,"day",10)).isoformat()))
+        conn.execute("INSERT INTO sale_entries VALUES(NULL,?,?,?,?,?)",(sale["id"],op,string(d,"label",160,True) or op.capitalize(),amount,
+                     date.fromisoformat(string(d,"day",10,True) or date.today().isoformat()).isoformat()))
     elif op=="allocate":
         purchase = require_row(conn,"orders",d.get("purchase"))
-        qty = int(string(d,"quantity",6))
+        qty = int(string(d,"quantity",6,True) or "0")
         used,spent = conn.execute("SELECT coalesce(sum(quantity),0),coalesce(sum(amount),0) FROM allocations WHERE purchase=?",
                                   (purchase["id"],)).fetchone()
-        if purchase["currency"]!=sale["currency"] or purchase["status"]=="Cancelled" or not 0<qty<=purchase["quantity"]-used:
+        if purchase["currency"]!=sale["currency"] or purchase["status"]=="Cancelled" or not 0<=qty<=purchase["quantity"]-used:
             raise ValueError("Choose available units from an active purchase in the order currency.")
         # Allocate tax and shipping proportionally, including the final rounding remainder.
         total = purchase["unit_minor"]*purchase["quantity"]+purchase["extra_minor"]

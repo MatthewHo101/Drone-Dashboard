@@ -213,7 +213,7 @@ dialog::backdrop { background: #17251f85; }
 @media(max-width:680px){ .task-stack .board-row {grid-template-columns:1fr;} }
 .board-shell {position:relative;}
 .board-shell .board-group summary {background:#d7e9e0;color:#163f36;padding-right:125px;}
-.board-shell [data-stage=Done] summary {background:#e5e8ed;color:#364252;}
+
 .sort-chip {position:absolute;right:12px;top:9px;display:flex;align-items:center;gap:4px;padding:2px 8px;background:white;border-radius:18px;}
 .sort-chip select {background:transparent;border:0;font:inherit;font-size:.83rem;min-height:26px;}
 .doc-card {position:relative;background:var(--surface);border:1px solid var(--border);border-radius:9px;}
@@ -257,3 +257,10 @@ dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
   .meeting-side {grid-column:2;grid-row:2;}
 }
 .task-detail [data-task-status] { margin:4px 12px 10px 0; }
+
+.priority-pill {display:inline-block;border-radius:99px;padding:3px 10px;font-size:.8rem;}
+.priority-low {background:#d4eddc;color:#165635;}
+.priority-normal {background:#fff0ae;color:#694b00;}
+.priority-high {background:#ffdedb;color:#922c26;}
+.finance-link {display:block;text-decoration:none;color:inherit;}
+.finance-link:hover dd {text-decoration:underline;}

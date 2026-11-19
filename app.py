@@ -131,8 +131,8 @@ def save_record(conn, data, actor, record_id=None):
     status = clean_text(data, "status", 20, True)
     if status not in STATUSES.get(kind, ()):
         raise ValueError("Choose a valid status.")
-    title = clean_text(data, "title", 140, True)
-    owner = clean_text(data, "owner", 40, True)
+    title = clean_text(data, "title", 140, kind!="issues") or "Untitled task"
+    owner = clean_text(data, "owner", 40, kind!="issues") or actor
     if not conn.execute("SELECT 1 FROM users WHERE name = ?", (owner,)).fetchone():
         raise ValueError("Choose a founder.")
     record_date = clean_text(data, "record_date", 10)

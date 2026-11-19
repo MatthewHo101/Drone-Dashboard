@@ -46,21 +46,47 @@ function commercialOverview() {
   const report=team.overview;
   const values=report.totals[displayCurrency];
   const format=value=>value===null?"Rate unavailable":esc(displayCurrency)+" "+cash(value);
-  const summaries='<section class="panel"><div class="panel-head">'+
-    '<label class="sort-chip currency-chip">Display currency <select name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label>'+'</div><dl class="delivery-totals">'+
-    '<div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl>'+
+  const financeUrl="#finances/"+displayCurrency;
+  const summaries='<section class="panel"><div class="panel-head"><h2><a href="'+financeUrl+'" target="_blank" rel="noopener">Finances ↗</a></h2>'+
+    '<label class="sort-chip currency-chip">Display currency <select name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label>'+'</div><a class="finance-link" href="'+financeUrl+'" target="_blank" rel="noopener"><dl class="delivery-totals">'+
+    '<div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl></a>'+
     (report.rate_day?'<small class="rate-date">Exchange rates · '+esc(report.rate_day)+'</small>':"")+'</section>';
   const selected=Number(location.hash.split("/")[1]);
   const cards=team.opportunities.filter(o=>!selected||o.id===selected).map(o=>{
     const sale=linked.get(o.id);
+    if(!selected)return recordRow("#commercial/"+o.id,o.title,[sale?"Won":o.stage,o.action?.length>140?o.action.slice(0,137)+"…":o.action].filter(Boolean).join(" · "));
     const actions=sale?'<a class="text-link" href="#sales/'+sale.id+'">Open sales order SO-'+sale.id+'</a>':
       form("lead","Edit opportunity",leadFields(o))+(o.stage==="Lost"?"":form("convert","Convert quote to sales order",hiddenId("lead",o.id)));
     return panel(o.title,'<p>'+esc(o.customer)+' · '+esc(sale?"Won":o.stage)+' · '+esc(person(o.owner))+'</p><p>'+esc(o.currency)+' '+cash(o.quote)+
       ' expected revenue · '+cash(BigInt(o.quote)-BigInt(o.estimate))+' estimated profit</p><p>'+esc(o.action)+' · '+esc(o.due||"No follow-up date")+'</p>'+
       taskAssociation("commercial",o.id)+actions);
   }).join("");
-  return (selected?'<a class="text-link" href="#commercial">← All opportunities</a>':"")+'<div class="panel-grid">'+summaries+'</div>'+form("lead","New opportunity",leadFields()) +fold("pipeline","Pipeline ("+team.opportunities.length+")",
+  if(selected)return '<a class="text-link" href="#commercial">← Pipeline</a>'+(cards||"<p>Opportunity unavailable.</p>");
+  return '<div class="panel-grid">'+summaries+'</div>'+form("lead","New opportunity",leadFields()) +fold("pipeline","Pipeline ("+team.opportunities.length+")",
     cards||'<p class="empty">No opportunities yet.</p>',true);
+}
+function financeDetails(){
+  const report=team.overview;
+  const code=currencies.includes(location.hash.split("/")[1])?location.hash.split("/")[1]:"GBP";
+  const amounts=report.totals[code];
+  return (report.rate_day?'<p>Exchange rates · '+esc(report.rate_day)+'</p>':"")+["Revenue","Cost"].map(kind=>{
+    const grouped=new Map();
+    for(const line of report.lines.filter(l=>l.kind===kind)){
+      const entries=grouped.get(line.currency)||[];
+      entries.push(line);
+      grouped.set(line.currency,entries);
+    }
+    const breakdown=[...grouped].map(([currency,entries])=>{
+      const subtotal=entries.reduce((sum,l)=>sum+BigInt(l.amount),0n);
+      const rows=entries.map(l=>recordRow("#"+l.route,l.label,currency+" "+cash(l.unit)+" × "+l.quantity+
+        (BigInt(l.extra)?" + "+cash(l.extra)+" tax/shipping":"")+" = "+cash(l.amount))).join("");
+      const rate=currency===code?"":report.rates[code]&&report.rates[currency]?
+        " × "+report.rates[code]+" ÷ "+report.rates[currency]+" ("+code+")":" · Rate unavailable";
+      return rows+"<p>Subtotal · "+currency+" "+cash(subtotal)+esc(rate)+"</p>";
+    }).join("");
+    const total=amounts[kind.toLowerCase()];
+    return panel(kind,(breakdown||"<p>No entries.</p>")+"<strong>Total · "+(total===null?"Rate unavailable":code+" "+cash(total))+"</strong>");
+  }).join("");
 }
 function itemFields(sale,item={}) {
   return hiddenId("sale",sale.id)+(item.id?hiddenId("item",item.id):"")+valueInput("label","Item",item.label)+
