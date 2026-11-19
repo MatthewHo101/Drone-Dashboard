@@ -49,7 +49,7 @@ function commercialOverview() {
   const values=report.totals[displayCurrency];
   const format=value=>value===null?"Rate unavailable":esc(displayCurrency)+" "+cash(value);
   const summaries='<section class="panel"><div class="panel-head">'+
-    select("displayCurrency","Display currency",currencies,displayCurrency)+'</div><dl class="delivery-totals">'+
+    '<label class="sort-chip currency-chip">Display currency <select name="displayCurrency">'+choices(currencies,displayCurrency)+'</select></label>'+'</div><dl class="delivery-totals">'+
     '<div><dt>Revenue</dt><dd>'+format(values.revenue)+'</dd></div><div><dt>Cost</dt><dd>'+format(values.cost)+'</dd></div></dl>'+
     (report.rate_day?'<small class="rate-date">Exchange rates · '+esc(report.rate_day)+'</small>':"")+'</section>';
   const selected=Number(location.hash.split("/")[1]);
@@ -101,8 +101,8 @@ function salesPage() {
     return '<a class="text-link" href="#sales">← All sales orders</a>'+(sale?salePanel(sale):'<p>Order unavailable.</p>');
   }
   return form("sale","New sales order",input("customer","Customer")+input("title","Order description")+select("currency","Currency",currencies)+
+    moneyInput("received","Amount received",0,false)+valueInput("paid_on","Payment date",dateNow(),"date")+
     valueInput("due","Delivery date","","date",false)+valueInput("project","Engineering project","","text",false))+
-    (team.sales.map(s=>panel("SO-"+s.id+" · "+s.title,'<p>'+esc(s.customer)+' · '+esc(s.status)+' · '+esc(s.currency)+' '+cash(saleTotals(s).revenue)+
-      '</p><a class="text-link" href="#sales/'+s.id+'">Open sales order →</a>')).join("")||'<p class="empty">No sales orders yet.</p>');
+    orderGroups("sales",deliveryStages,team.sales,s=>recordRow("#sales/"+s.id,"SO-"+s.id+" · "+s.title,
+      s.customer+" · "+s.currency+" "+cash(saleTotals(s).revenue)));
 }
-

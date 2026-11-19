@@ -103,6 +103,20 @@ class WorkspaceSecurity(unittest.TestCase):
         self.assertEqual(entry["document"], document["id"])
         self.assertEqual(entry["task"], document["task"])
 
+    def test_sales_order_initial_payment(self):
+        cookie=self.login()
+        order=dict(customer="Farm",title="Survey",currency="GBP",received="125.50",
+                   paid_on="2026-11-19",request_key="initial-deposit")
+        self.call("/api/team/sale",dict(order,paid_on="invalid"),cookie,400)
+        for _ in range(2):
+            self.call("/api/team/sale",order,cookie)
+        _,data=self.call("/api/team",cookie=cookie)
+        sale,=data["sales"]
+        payment,=data["sale_entries"]
+        self.assertEqual((payment["sale"],payment["kind"],payment["amount"],payment["day"]),
+                         (sale["id"],"payment",12550,"2026-11-19"))
+        self.assertEqual(data["overview"]["totals"]["GBP"]["revenue"],"0")
+
     def test_quote_to_delivery_and_shared_attachments(self):
         cookie = self.login()
         def post(op, fields, status=200):

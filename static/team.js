@@ -32,6 +32,21 @@ function form(op,title,fields) {
 function panel(title,body) {
   return '<section class="panel"><div class="panel-head"><h2>'+esc(title)+'</h2></div><div class="entries">'+body+'</div></section>';
 }
+const foldStates=new Map();
+function fold(key,title,body,expanded=false){
+  const open=foldStates.get(key)??expanded;
+  return '<details class="panel workspace-fold" data-fold="'+esc(key)+'" '+(open?"open":"")+'><summary>'+esc(title)+'</summary><div class="entries">'+body+'</div></details>';
+}
+function recordRow(url,title,meta){
+  return '<a class="record-row" href="'+esc(url)+'"><strong>'+esc(title)+'</strong><small>'+esc(meta)+'</small></a>';
+}
+function orderGroups(prefix,statuses,records,row){
+  if(!records.length)return '<p class="empty">No matching orders.</p>';
+  return statuses.map(status=>{
+    const items=records.filter(o=>o.status===status);
+    return items.length?fold(prefix+status,status+" ("+items.length+")",items.map(row).join(""),true):"";
+  }).join("");
+}
 const tasks = () => workspace.records.filter(r=>r.kind==="issues");
 const taskSelect = () => select("task","Associated task",[["","Unassigned"],...tasks().map(t=>[t.id,t.title])]);
 function calendar(title,day,notes="") {
@@ -108,24 +123,24 @@ function taskDetail() {
   const updateFields=hiddenId("task",task.id)+valueInput("work_date","Work date",dateNow(),"date")+
     input("file","Document (optional, up to 5 MiB)","file","")+
     input("body","What was done?","area",'required maxlength="4000"');
+  const linkedMeetings=fold("task-meetings-"+task.id,"Linked meetings",team.meeting_tasks.filter(l=>l.task===task.id).map(l=>{
+      const meeting=team.meetings.find(m=>m.id===l.meeting);
+      return '<a class="text-link" href="#meetings/'+meeting.id+'">'+esc(meeting.day+" · "+meeting.title)+'</a>';
+    }).join("")+(team.meetings.length?form("link-meeting","Link workspace meeting",hiddenId("task",task.id)+
+      select("meeting","Meeting",team.meetings.map(m=>[m.id,m.day+" · "+m.title]))):"")+(team.calendar_account?form("meeting-search","Link Google meeting",input("query","Search upcoming meetings","search","")+hiddenId("task",task.id))+
+      '<div id="meeting-results"></div>':'<a href="/security">Connect Google Calendar to link a meeting</a>'));
   return '<div class="task-detail">'+back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
     '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
     '<p>Liable people · '+esc((task.details.liable||[]).map(person).join(", ")||"None")+'</p>'+
     (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
     '<button class="primary" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
-    panel("Linked meetings",team.meeting_tasks.filter(l=>l.task===task.id).map(l=>{
-      const meeting=team.meetings.find(m=>m.id===l.meeting);
-      return '<a class="text-link" href="#meetings/'+meeting.id+'">'+esc(meeting.day+" · "+meeting.title)+'</a>';
-    }).join("")+(team.meetings.length?form("link-meeting","Link workspace meeting",hiddenId("task",task.id)+
-      select("meeting","Meeting",team.meetings.map(m=>[m.id,m.day+" · "+m.title]))):"")+(team.calendar_account?form("meeting-search","Link Google meeting",input("query","Search upcoming meetings","search","")+hiddenId("task",task.id))+
-      '<div id="meeting-results"></div>':'<a href="/security">Connect Google Calendar to link a meeting</a>'))+
     form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+
       '<label>Notes<textarea name="notes" maxlength="2000">'+esc(task.notes)+'</textarea></label>')+
     '<button class="secondary" data-calendar-task="'+task.id+'">Add to Google Calendar</button>'+
     (task.record_date?"":'<small>The event will use today unless you set a due date.</small>')+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
     encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+
-    panel("Work history",form("task-update","Add work update",updateFields)+
+    '<aside class="meeting-side">'+linkedMeetings+'</aside>'+panel("Work history",form("task-update","Add work update",updateFields)+
       (history+otherFiles||'<p>No work updates yet.</p>'))+'</div>';
 }
 function download(doc) {
@@ -201,9 +216,9 @@ function meetingCalendar(){
     days.push('<div class="cal-day"><time datetime="'+day+'">'+n+'</time>'+
       meetings.map(m=>'<button class="cal-meeting" data-meeting="'+m.id+'">'+esc(m.title)+'</button>').join("")+'</div>');
   }
-  return panel("Calendar",'<div class="cal-controls"><button class="secondary" data-month-shift="-1" aria-label="Previous month">←</button>'+
+  return fold("month-grid","Calendar",'<div class="cal-controls"><button class="secondary" data-month-shift="-1" aria-label="Previous month">←</button>'+
     input("meetingMonth","Month","month",'value="'+meetingMonth+'"')+
-    '<button class="secondary" data-month-shift="1" aria-label="Next month">→</button></div><div class="cal-scroll"><div class="cal-grid">'+days.join("")+'</div></div>');
+    '<button class="secondary" data-month-shift="1" aria-label="Next month">→</button></div><div class="cal-scroll"><div class="cal-grid">'+days.join("")+'</div></div>',true);
 }
 function agenda(m){
   const event=team.calendar_meetings.find(e=>e.meeting===m.id);
@@ -214,13 +229,19 @@ function agenda(m){
     form("task","Create follow-up task",hiddenId("meeting",m.id)+taskFields())+
     form("meeting-notes","Edit agenda and notes",hiddenId("meeting",m.id)+'<label>Agenda and notes<textarea name="notes" maxlength="30000">'+esc(m.notes)+'</textarea></label>');
 }
+function openMeeting(card){
+  card.closest("details[data-fold]").open=true;
+  card.querySelector("details").open=true;
+  card.scrollIntoView({block:"start"});
+  card.focus({preventScroll:true});
+}
 function meetings() {
-  return (team.calendar_account?'<p>Google Calendar · '+esc(team.calendar_account.problem||(team.calendar_account.synced?"Last synced "+new Date(team.calendar_account.synced).toLocaleString():"Awaiting first sync"))+'</p>':"")+meetingCalendar()+form("meeting","Add meeting notes",input("project","Engineering project","text",'maxlength="100"')+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
+  return (team.calendar_account?fold("calendar-sync","Google Calendar",esc(team.calendar_account.problem||(team.calendar_account.synced?"Last synced "+new Date(team.calendar_account.synced).toLocaleString():"Awaiting first sync"))):"")+meetingCalendar()+form("meeting","Add meeting notes",input("project","Engineering project","text",'maxlength="100"')+select("opportunity","Commercial opportunity",[["","Unassigned"],...team.opportunities.map(o=>[o.id,o.title+" · "+o.customer])])+input("title","Meeting")+input("day","Meeting date","date")+
     input("notes","Notes or transcript","area",'required maxlength="30000"'))+
-    team.meetings.map(m=>'<div tabindex="-1" id="meeting-'+m.id+'">'+panel(m.title,agenda(m)+projectLink(m.project)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
+    fold("meeting-list","Meetings ("+team.meetings.length+")",team.meetings.map(m=>'<div tabindex="-1" id="meeting-'+m.id+'">'+fold("meeting-"+m.id,m.day+" · "+m.title,agenda(m)+projectLink(m.project)+(m.opportunity?'<a class="text-link" href="#commercial/'+m.opportunity+'">'+esc(team.opportunities.find(o=>o.id===m.opportunity)?.title)+'</a>':"")+'<small>'+esc(m.day)+'</small>'+calendar(m.title,m.day)+
     '<details><summary>Meeting notes</summary><pre>'+esc(m.notes)+'</pre></details>'+
     (m.summary?'<h3>AI summary</h3><pre>'+esc(m.summary)+'</pre>':'')+
-    '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("");
+    '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("")||'<p>No meetings yet.</p>',true);
 }
 function diagram(source) {
   const edges=source.split(/\r?\n/).map(line=>line.split("->").map(s=>s.trim()));
@@ -250,14 +271,23 @@ function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
 }
 function orders() {
-  const totals=new Map();
-  const cards=team.orders.filter(o=>(!purchaseCategory||o.category===purchaseCategory)&&(!purchaseProject||o.project===purchaseProject)).map(o=>{
-    const total=BigInt(o.quantity)*BigInt(o.unit_minor)+BigInt(o.extra_minor);
-    if(o.status!=="Cancelled") totals.set(o.currency,(totals.get(o.currency)||0n)+total);
-    return panel(o.supplier,projectLink(o.project)+esc(o.category)+" · <small>Invoice "+esc(o.invoice)+"</small><p>"+o.quantity+" × "+amount(BigInt(o.unit_minor))+" + "+
+  const purchaseTotal=o=>BigInt(o.quantity)*BigInt(o.unit_minor)+BigInt(o.extra_minor);
+  const id=location.hash.split("/")[1];
+  if(id){
+    const o=team.orders.find(order=>String(order.id)===id);
+    const back='<a class="text-link" href="#orders">← All purchases</a>';
+    if(!o)return back+"<p>Purchase unavailable.</p>";
+    const total=purchaseTotal(o);
+    return back+panel(o.supplier,projectLink(o.project)+esc(o.category)+" · <small>Invoice "+esc(o.invoice)+"</small><p>"+o.quantity+" × "+amount(BigInt(o.unit_minor))+" + "+
       amount(BigInt(o.extra_minor))+" = <strong>"+esc(o.currency)+" "+amount(total)+'</strong></p><label>Status <select data-order="'+o.id+'">'+choices(orderStages,o.status)+'</select></label>'+
       download(team.documents.find(d=>d.id===o.document)));
-  }).join("");
+  }
+  const totals=new Map();
+  const filtered=team.orders.filter(o=>(!purchaseCategory||o.category===purchaseCategory)&&(!purchaseProject||o.project===purchaseProject));
+  for(const o of filtered){
+    if(o.status!=="Cancelled")totals.set(o.currency,(totals.get(o.currency)||0n)+purchaseTotal(o));
+  }
+  const cards=orderGroups("orders",orderStages,filtered,o=>recordRow("#orders/"+o.id,o.supplier+" · "+o.invoice,o.currency+" "+amount(purchaseTotal(o))));
   return form("order","Record an invoice",select("category","Category",["General","R&D","Commercial"])+input("project","Project","text",'maxlength="100"')+input("supplier","Supplier")+input("invoice","Invoice reference")+select("currency","Currency",currencies)+
     input("quantity","Quantity","number",'required min="1" max="999999" value="1"')+
     input("unit","Unit cost","number",'required min="0" step=".01"')+input("extras","Tax and shipping combined","number",'required min="0" step=".01" value="0"')+
@@ -268,12 +298,13 @@ const pages={task:["Task details",taskDetail],board:["Tasks",board],meetings:["M
 function render() {
   const [key]=location.hash.slice(1).split("/");
   const [title,display]=Object.hasOwn(pages,key)?pages[key]:pages.board;
-  view.innerHTML='<header class="intro"><h1>'+title+'</h1></header>'+display();
+  const detailTitle=location.hash.split("/")[1] && ({sales:"Sales order details",orders:"Purchase details"})[key];
+  view.innerHTML='<header class="intro"><h1>'+(detailTitle||title)+'</h1></header>'+display();
   loadReader(view.querySelector(".reader-body"));
   highlightNavigation();
   if(key==="meetings"){
     const card=document.getElementById("meeting-"+location.hash.split("/")[1]);
-    if(card)card.scrollIntoView();
+    if(card)openMeeting(card);
   }
 }
 async function api(url,data,method="POST") {
@@ -378,6 +409,7 @@ async function searchMeetings(form,page=""){
   if(result.nextPageToken)container.innerHTML+='<button class="secondary" data-events-page="'+esc(result.nextPageToken)+'">Next meetings</button>';
 }
 view.addEventListener("toggle",event=>{
+  if(event.target.isConnected && event.target.dataset.fold)foldStates.set(event.target.dataset.fold,event.target.open);
   if(event.target.isConnected && event.target.dataset.stage)boardState[event.target.dataset.stage].expanded=event.target.open;
 },true);
 for(const trigger of ["pointerover","focusin"]){
@@ -422,10 +454,7 @@ view.addEventListener("click",async event=>{
   const meeting=event.target.closest("[data-meeting]");
   if(meeting){
     const card=document.getElementById("meeting-"+meeting.dataset.meeting);
-    const notes=card.querySelector("details:not(.entry)");
-    if(notes)notes.open=true;
-    card.scrollIntoView({block:"start"});
-    card.focus({preventScroll:true});
+    openMeeting(card);
   }
   const button=event.target.closest("[data-summary]");
   if(button) perform(button,()=>api("/api/team/summarize",{id:Number(button.dataset.summary)}));

@@ -242,3 +242,17 @@ dialog .form-grid label {display:grid;margin:0;min-width:0;}
 dialog .form-grid :is(input:not([type=checkbox]),select,textarea) {width:100%;margin:0;box-sizing:border-box;}
 dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
 @media(max-width:740px){.identity > span + span {display:block;max-width:36vw;}.identity strong {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+
+.sort-chip.currency-chip {position:static;margin-left:auto;}
+.workspace-fold {margin:10px 0;}
+.workspace-fold > summary {cursor:pointer;padding:12px 16px;background:#d7e9e0;color:#163f36;font-weight:700;}
+.workspace-fold .record-row {grid-template-columns:minmax(0,1fr) auto;}
+.meeting-side {min-width:0;}
+.meeting-side .workspace-fold {margin:0;}
+.meeting-side summary {font-size:.88rem;padding:10px 12px;}
+@media(min-width:860px){
+  .task-detail {grid-template-columns:minmax(0,1fr) minmax(190px,245px);align-items:start;}
+  .task-detail > .text-link {grid-column:1/-1;}
+  .task-detail > .panel {grid-column:1;}
+  .meeting-side {grid-column:2;grid-row:2;}
+}

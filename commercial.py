@@ -138,8 +138,13 @@ def apply(conn, op, d, actor):
         project = string(d,"project",100,True)
         due = day(string(d,"due",10,True))
         if op=="sale":
-            conn.execute("INSERT INTO sales(customer,title,currency,status,due,project) VALUES(?,?,?,?,?,?)",
-                         (customer,title,currency,"Confirmed",due,project))
+            sale = conn.execute("INSERT INTO sales(customer,title,currency,status,due,project) VALUES(?,?,?,?,?,?)",
+                         (customer,title,currency,"Confirmed",due,project)).lastrowid
+            received = money(d,"received") if d.get("received") else 0
+            if received:
+                paid_on = date.fromisoformat(string(d,"paid_on",10)).isoformat()
+                conn.execute("INSERT INTO sale_entries(sale,kind,label,amount,day) VALUES(?,?,?,?,?)",
+                             (sale,"payment","Initial payment",received,paid_on))
             return
         owner = string(d,"owner",40)
         if not conn.execute("SELECT 1 FROM users WHERE name=?", (owner,)).fetchone():
