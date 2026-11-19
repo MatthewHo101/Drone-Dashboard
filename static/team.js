@@ -166,12 +166,13 @@ function taskDetail() {
     '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
     '<p>Liable people · '+esc((task.details.liable||[]).map(person).join(", ")||"None")+'</p>'+
     (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
-    '<button class="primary" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
+    '<div class="task-actions" role="group" aria-label="Task actions"><button type="button" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
     form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+
       '<label>Notes<textarea name="notes" maxlength="2000">'+esc(task.notes)+'</textarea></label>')+
+    '<button type="button" data-calendar-task="'+task.id+'">Add to Google Calendar</button>'+
     (!workspace.demo && (task.owner===workspace.actor || team.can_delete_documents)?
       '<button type="button" class="delete-docs" data-delete-task="'+task.id+'">Delete task</button>':"")+
-    '<button class="secondary" data-calendar-task="'+task.id+'">Add to Google Calendar</button>'+
+    '</div>'+
     (task.record_date?"":'<small>The event will use today unless you set a due date.</small>')+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
     encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+

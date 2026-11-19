@@ -256,7 +256,14 @@ dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
   .task-detail > .panel {grid-column:1;}
   .meeting-side {grid-column:2;grid-row:2;}
 }
-.task-detail [data-task-status] { margin:4px 12px 10px 0; }
+.task-actions {display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+.task-actions > button {display:inline-flex;align-items:center;justify-content:center;min-height:40px;margin:0;padding:8px 14px;border:1px solid #b8cbbf;border-radius:7px;background:#f4f8f4;color:#234c40;cursor:pointer;font-family:inherit;font-size:.875rem;font-weight:600;line-height:1.25;}
+.task-actions > button:hover {background:#e6f0e8;}
+.task-actions > [data-delete-task] {border-color:#d9bcb9;color:#852e27;background:#fff9f8;}
+.task-actions > [data-delete-task]:hover {background:#fae8e6;}
+.task-actions > button:focus-visible {outline:2px solid currentColor;outline-offset:2px;}
+.task-actions > button:disabled {opacity:.6;cursor:wait;}
+@media(max-width:560px){.task-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}.task-actions > button {min-height:44px;}}
 
 .priority-pill {display:inline-block;border-radius:99px;padding:3px 10px;font-size:.8rem;}
 .priority-low {background:#d4eddc;color:#165635;}
