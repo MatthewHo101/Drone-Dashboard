@@ -1,4 +1,5 @@
 """Run the shared Lysim workspace on a private network."""
+import google_calendar
 import security
 import team
 import argparse
@@ -47,6 +48,8 @@ CREATE TABLE IF NOT EXISTS records (
 );
 """
 ASSETS = {
+    "/google/callback": ("google-callback.html", "text/html; charset=utf-8"),
+    "/google-callback.js": ("google-callback.js", "text/javascript; charset=utf-8"),
     "/security": ("security.html", "text/html; charset=utf-8"),
     "/security.js": ("security.js", "text/javascript; charset=utf-8"),
     "/nav.js": ("nav.js", "text/javascript; charset=utf-8"),
@@ -75,7 +78,7 @@ def database(write=False):
 def initialize():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with database() as conn:
-        conn.executescript(SCHEMA + team.SCHEMA + security.SCHEMA + team.commercial.SCHEMA)
+        conn.executescript(SCHEMA + team.SCHEMA + google_calendar.SCHEMA + security.SCHEMA + team.commercial.SCHEMA)
         conn.execute("UPDATE records SET status='Open' WHERE kind='issues' AND status IN ('In progress','Blocked')")
 
 
@@ -246,6 +249,10 @@ class Handler(BaseHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(15)
 
+    def log_request(self, code="-", size="-"):
+        if getattr(self,"path","").split("?")[0] != "/google/callback":
+            super().log_request(code,size)
+
     def send_body(self, status, body, content_type, headers=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -390,7 +397,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.command == "GET" and path == "/auth/status":
                     self.json(200, {"actor":actor,"display":security.label(conn,actor),"demo":self.server.demo,"admin":bool(actor and security.exists(conn,"admins",actor)),"enroll":limited})
                     return
-                if not actor and path not in ("/login", "/login.js", "/logo.png", "/style.css"):
+                if not actor and path not in ("/login", "/login.js", "/logo.png", "/style.css", "/google/callback", "/google-callback.js"):
                     if self.command == "GET" and path in ("/", "/team", "/security"):
                         path = "/login"
                     else:
@@ -414,6 +421,12 @@ class Handler(BaseHTTPRequestHandler):
                         self.json(200,result)
                     else:
                         raise LookupError("Unknown account operation.")
+                    return
+                if path in ("/api/google/add","/api/google/finish") and self.command=="POST":
+                    if self.server.demo:
+                        raise PermissionError("Connect Google Calendar in the live workspace.")
+                    result = google_calendar.handle(conn,self.session_digest(),path,team.payload(self,8192))
+                    self.json(200,result)
                     return
                 if team.handle(self, conn, path, actor):
                     return

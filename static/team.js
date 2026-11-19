@@ -78,7 +78,8 @@ function taskDetail() {
     '<button class="primary" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
     form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+
       '<label>Notes<textarea name="notes" maxlength="2000">'+esc(task.notes)+'</textarea></label>')+
-    calendar(task.title,task.record_date,task.details.next_action)+
+    '<button class="secondary" data-calendar-task="'+task.id+'">Add to Google Calendar</button>'+
+    (task.record_date?"":'<small>The event will use today unless you set a due date.</small>')+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
     encodeURIComponent(task.title+" "+location.href)+'">Share task via WhatsApp ↗</a>')+
     panel("Work history",form("task-update","Add work update",updateFields)+
@@ -260,7 +261,16 @@ view.addEventListener("change",event=>{
     perform(control,()=>api("/api/team/order-status",{id,status}));
   }
 });
-view.addEventListener("click",event=>{
+view.addEventListener("click",async event=>{
+  const calendarButton=event.target.closest("[data-calendar-task]");
+  if(calendarButton){
+    calendarButton.disabled=true;
+    try {
+      const result=await api("/api/google/add",{task:Number(calendarButton.dataset.calendarTask),today:dateNow()});
+      location.assign(result.url);
+    } catch(error){feedback.textContent=error.message;calendarButton.disabled=false;}
+    return;
+  }
   const toggle=event.target.closest("[data-task-status]");
   if(toggle){
     const task=tasks().find(t=>t.id===Number(toggle.dataset.taskStatus));
