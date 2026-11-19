@@ -83,6 +83,28 @@ class WorkspaceSecurity(unittest.TestCase):
         self.call("/api/team/document",{"filename":"Next file"},member)
         self.assertGreater(snapshot()["documents"][0]["id"],max(ids))
 
+    def test_delete_task_keeps_linked_files_and_records(self):
+        admin=self.login()
+        self.approve_new("teammate2",admin)
+        member=self.login("teammate2")
+        task=self.call("/api/records",dict(kind="issues",status="Open"),admin,201)[1]
+        payload={"id":task["id"],"updated_at":task["updated_at"]}
+        self.call("/api/team/task-update",dict(task=task["id"],body="Checked",
+                  filename="check.txt",file="YWJj"),admin)
+        self.call("/api/team/note",dict(task=task["id"],title="Contact",request_key="linked"),admin)
+        self.call("/api/team/delete-task",payload,member,403)
+        self.call("/api/team/delete-task",dict(payload,updated_at="old"),admin,400)
+        self.call("/api/team/delete-task",payload,admin)
+        state=self.call("/api/team",cookie=admin)[1]
+        self.assertFalse(state["resource_links"])
+        self.assertFalse(state["task_updates"])
+        self.assertEqual(state["notes"][0]["title"],"Contact")
+        self.assertIsNone(state["documents"][0]["task"])
+        self.assertEqual(self.call("/downloads/"+str(state["documents"][0]["id"]),cookie=admin)[1],b"abc")
+        self.call("/api/team/delete-task",payload,admin,404)
+        own=self.call("/api/records",dict(kind="issues",status="Done"),member,201)[1]
+        self.call("/api/team/delete-task",dict(id=own["id"],updated_at=own["updated_at"]),member)
+
     def test_task_history_and_documents(self):
         cookie = self.login()
         _, task = self.call("/api/records", dict(kind="issues", title="Check frame",

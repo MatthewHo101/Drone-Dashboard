@@ -346,6 +346,25 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, ENCODED_LIMIT+65536)
     op = path.rsplit("/",1)[-1]
+    if op=="delete-task":
+        conn.execute("BEGIN IMMEDIATE")
+        task_id=data.get("id")
+        task=conn.execute("SELECT owner,updated_at FROM records WHERE id=? AND kind='issues'",(task_id,)).fetchone()
+        if not task:
+            raise LookupError("Task unavailable.")
+        if handler.server.demo or (actor!=task["owner"] and not can_delete_documents(conn,actor,False)):
+            raise PermissionError("Only the task owner or an administrator can delete this task.")
+        if data.get("updated_at")!=task["updated_at"]:
+            raise ValueError("The task has changed. Refresh before deleting it.")
+        conn.execute("DELETE FROM task_update_details WHERE update_id IN (SELECT id FROM task_updates WHERE task=?)",(task_id,))
+        for table in ("task_updates","task_resources","meeting_tasks","calendar_deadlines","google_event_ids"):
+            conn.execute(f"DELETE FROM {table} WHERE task=?",(task_id,))
+        conn.execute("UPDATE documents SET task=NULL WHERE task=?",(task_id,))
+        conn.execute("DELETE FROM google_auth WHERE pending_task=? AND state IS NOT NULL",(task_id,))
+        conn.execute("DELETE FROM records WHERE id=?",(task_id,))
+        conn.commit()
+        handler.json(200,{"saved":True})
+        return True
     if op=="delete-work-update":
         conn.execute("BEGIN IMMEDIATE")
         update=conn.execute("SELECT * FROM task_updates WHERE id=? AND task=? AND posted_at=?",

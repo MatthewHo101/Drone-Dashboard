@@ -169,6 +169,8 @@ function taskDetail() {
     '<button class="primary" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
     form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+
       '<label>Notes<textarea name="notes" maxlength="2000">'+esc(task.notes)+'</textarea></label>')+
+    (!workspace.demo && (task.owner===workspace.actor || team.can_delete_documents)?
+      '<button type="button" class="delete-docs" data-delete-task="'+task.id+'">Delete task</button>':"")+
     '<button class="secondary" data-calendar-task="'+task.id+'">Add to Google Calendar</button>'+
     (task.record_date?"":'<small>The event will use today unless you set a due date.</small>')+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
@@ -632,6 +634,17 @@ view.addEventListener("click",async event=>{
   if(link){perform(link,()=>api("/api/google/link",{task:link.dataset.task,event:link.dataset.linkEvent}));return;}
   const page=event.target.closest("[data-events-page]");
   if(page){searchMeetings(view.querySelector('[data-op="meeting-search"]'),page.dataset.eventsPage).catch(e=>feedback.textContent=e.message);return;}
+  const deleteTask=event.target.closest("[data-delete-task]");
+  if(deleteTask){
+    const task=tasks().find(t=>String(t.id)===deleteTask.dataset.deleteTask);
+    if(task && confirm('Permanently delete "'+task.title+'" and its work history? Documents and linked records will remain in the workspace.')){
+      perform(deleteTask,async()=>{
+        await api("/api/team/delete-task",{id:task.id,updated_at:task.updated_at});
+        location.hash="#board";
+      });
+    }
+    return;
+  }
   const deleteUpdate=event.target.closest("[data-delete-update]");
   if(deleteUpdate){
     const update=team.task_updates.find(u=>String(u.id)===deleteUpdate.dataset.deleteUpdate);

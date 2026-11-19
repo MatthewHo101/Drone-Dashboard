@@ -8,7 +8,7 @@ const profile=document.createElement("a");
 profile.className="identity";
 profile.href="/security";
 profile.setAttribute("aria-label","Open account");
-profile.innerHTML='<span class="avatar" aria-hidden="true"></span><span><strong>Account</strong><small>Founder</small></span>';
+profile.innerHTML='<span class="avatar" aria-hidden="true"></span><span><strong>Account</strong></span>';
 navigation.after(profile);
 function showProfile(display){
   if(!display)return;
