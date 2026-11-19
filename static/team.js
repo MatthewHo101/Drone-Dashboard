@@ -50,8 +50,7 @@ function board() {
   return form("task","Create task",taskFields())+'<div class="task-stack">'+stages.map(stage=>
     panel(stage,items.filter(t=>t.status===stage).map(t=>
       '<article><a class="task-card" href="#task/'+t.id+'"><strong>'+esc(t.title)+'</strong><small>'+
-      esc([person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small></a>'+
-      (stage==="Open"?'<button class="secondary" data-done="'+t.id+'">Done</button>':"")+'</article>' 
+      esc([person(t.owner),t.record_date].filter(Boolean).join(" · "))+'</small></a></article>'
     ).join("")||"<small>No tasks</small>")).join("")+'</div>';
 }
 function taskDetail() {
@@ -76,7 +75,8 @@ function taskDetail() {
   return '<div class="task-detail">'+back+panel(task.title,'<p>'+esc(task.status)+' · '+esc(person(task.owner))+'</p><p>Due date · '+esc(task.record_date||"Unscheduled")+
     '</p>'+(task.details.next_action?'<p>Next action · '+esc(task.details.next_action)+'</p>':"")+
     (task.notes?'<pre>'+esc(task.notes)+'</pre>':"")+
-    form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+select("status","Status",stages,task.status)+
+    '<button class="primary" data-task-status="'+task.id+'">'+(task.status==="Done"?"Move to Open":"Mark as Complete")+'</button>'+
+    form("edit-task","Edit task",hiddenId("task",task.id)+taskFields(task)+
       '<label>Notes<textarea name="notes" maxlength="2000">'+esc(task.notes)+'</textarea></label>')+
     calendar(task.title,task.record_date,task.details.next_action)+
     '<a class="text-link" target="_blank" rel="noopener noreferrer" href="https://wa.me/?text='+
@@ -113,8 +113,15 @@ function documents() {
       (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+attachment(doc));
   }
   return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 5 MiB","file"))+
-    '<div class="document-list">'+team.documents.map(d=>'<a class="record-row" href="#documents/'+d.id+'">'+
-      '<strong>'+esc(d.name)+'</strong><span>View details →</span></a>').join("")+'</div>';
+    '<div class="document-list">'+team.documents.map(doc=>{
+      const details="#documents/"+doc.id;
+      const date=doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString():"Not recorded";
+      const uploader=doc.uploader?person(doc.uploader):"Not recorded";
+      const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
+      const preview=doc.preview?'<a href="'+details+'"><img class="order-photo" loading="lazy" src="'+src+doc.id+'" alt="Preview of '+esc(doc.name)+'"></a>':download(doc);
+      return '<article class="panel entries"><h2><a href="'+details+'">'+esc(doc.name)+'</a></h2><p>Upload date · '+
+        esc(date)+' · Uploaded by · '+esc(uploader)+'</p>'+preview+'</article>';
+    }).join("")+'</div>';
 }
 function meetingCalendar(){
   const [year,month]=meetingMonth.split("-").map(Number);
@@ -254,10 +261,11 @@ view.addEventListener("change",event=>{
   }
 });
 view.addEventListener("click",event=>{
-  const done=event.target.closest("[data-done]");
-  if(done){
-    const task=tasks().find(t=>t.id===Number(done.dataset.done));
-    perform(done,()=>api("/api/records/"+task.id,{...task,...task.details,status:"Done"},"PUT"));
+  const toggle=event.target.closest("[data-task-status]");
+  if(toggle){
+    const task=tasks().find(t=>t.id===Number(toggle.dataset.taskStatus));
+    const status=task.status==="Done"?"Open":"Done";
+    perform(toggle,()=>api("/api/records/"+task.id,{...task,...task.details,status},"PUT"));
     return;
   }
   const shift=event.target.closest("[data-month-shift]");

@@ -1,5 +1,9 @@
 """Team workspace persistence, protected uploads, and authenticator verification."""
 import commercial
+import subprocess
+import threading
+
+thumbnail_lock = threading.Lock()
 import base64
 import hashlib
 import hmac
@@ -24,6 +28,7 @@ CREATE TABLE IF NOT EXISTS factors(name TEXT PRIMARY KEY REFERENCES users(name),
  last_step INTEGER DEFAULT -1, attempts INTEGER DEFAULT 0, blocked_until INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, name TEXT REFERENCES users(name), expires INTEGER);
 CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY, task INTEGER REFERENCES records(id), name TEXT, body BLOB);
+CREATE TABLE IF NOT EXISTS pdf_thumbnails(document INTEGER PRIMARY KEY REFERENCES documents(id), image BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS upload_info(document INTEGER PRIMARY KEY REFERENCES documents(id), source TEXT NOT NULL,
  actor TEXT NOT NULL, uploaded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
 CREATE TABLE IF NOT EXISTS task_update_details(
@@ -129,11 +134,33 @@ def summarize(notes):
 
 
 def handle(handler, conn, path, actor):
-    if path.startswith(("/downloads/","/previews/")) and handler.command == "GET":
+    if path.startswith(("/downloads/","/previews/","/thumbnails/")) and handler.command == "GET":
         doc = conn.execute("SELECT name,body FROM documents WHERE id=?", (path.split("/")[-1],)).fetchone()
         if not doc:
             raise LookupError("Document not found.")
         import security
+        if path.startswith("/thumbnails/"):
+            if commercial.preview_type(doc["body"]) != "application/pdf":
+                raise ValueError("This document has no PDF thumbnail.")
+            document_id = path.split("/")[-1]
+            with thumbnail_lock:
+                cached = conn.execute("SELECT image FROM pdf_thumbnails WHERE document=?", (document_id,)).fetchone()
+                if cached:
+                    image = cached[0]
+                else:
+                    try:
+                        result = subprocess.run(["pdftoppm","-f","1","-l","1","-singlefile","-scale-to","480","-png","-"],
+                                                input=doc["body"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                                check=True, timeout=8)
+                    except (OSError, subprocess.SubprocessError) as error:
+                        raise ValueError("PDF preview unavailable.") from error
+                    image = result.stdout
+                    if not image.startswith(b"\x89PNG"):
+                        raise ValueError("PDF preview unavailable.")
+                    conn.execute("INSERT OR REPLACE INTO pdf_thumbnails VALUES(?,?)",(document_id,image))
+                    conn.commit()
+            handler.send_body(200,image,"image/png")
+            return True
         if path.startswith("/previews/"):
             mime = commercial.preview_type(doc["body"])
             if not mime:
