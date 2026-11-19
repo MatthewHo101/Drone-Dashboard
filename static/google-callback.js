@@ -7,6 +7,10 @@ async function finish(){
     body:JSON.stringify({state:query.get("state"),code:query.get("code")})});
   const result=await response.json();
   if(!response.ok) throw Error(result.error||"Sign in and retry from Task details.");
+  if(result.meeting && "BroadcastChannel" in window){
+    const changes=new BroadcastChannel("lysim-calendar");
+    changes.postMessage("saved");changes.close();
+  }
   location.replace(result.url);
 }
 finish().catch(error=>document.querySelector("[role=status]").textContent=error.message);

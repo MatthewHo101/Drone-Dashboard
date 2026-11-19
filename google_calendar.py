@@ -118,10 +118,13 @@ def handle(conn, session, path, data):
             saved = request(EVENTS+"/"+event_id,token=token)
         if saved.get("status")=="cancelled" or not saved.get("htmlLink"):
             raise ValueError("This event was deleted in Google Calendar. Restore it from Calendar trash.")
+        conn.execute("BEGIN IMMEDIATE")
+        meeting=save_event(conn,actor,saved)
+        conn.execute("INSERT OR IGNORE INTO meeting_tasks VALUES(?,?)",(meeting,task_id))
         if account or op=="finish":
             conn.execute("INSERT OR REPLACE INTO calendar_deadlines VALUES(?,?,?)",(actor,task_id,saved.get("start",{}).get("date",day.isoformat())))
-            conn.commit()
-        return {"url":saved["htmlLink"]}
+        conn.commit()
+        return {"url":saved["htmlLink"],"meeting":meeting}
     except HTTPError as error:
         if error.code==401:
             conn.execute("DELETE FROM google_auth WHERE session=?",(session,))
@@ -150,6 +153,9 @@ def access(account):
 def snapshot(conn,actor):
     account=conn.execute("SELECT synced,problem FROM calendar_accounts WHERE actor=?",(actor,)).fetchone()
     return dict(calendar_account=dict(account) if account else None,
+        calendar_task_events=[dict(r) for r in conn.execute("""SELECT DISTINCT t.task,m.day FROM meeting_tasks t
+            JOIN meetings m ON m.id=t.meeting JOIN calendar_meetings c ON c.meeting=m.id
+            JOIN google_event_ids e ON e.task=t.task AND e.event=c.event WHERE c.cancelled=0""")],
         calendar_meetings=[dict(r) for r in conn.execute("SELECT meeting,starts,link,video,cancelled FROM calendar_meetings")],
         meeting_tasks=[dict(r) for r in conn.execute("SELECT * FROM meeting_tasks")])
 

@@ -130,7 +130,9 @@ function workUpdateDetail(){
   return '<a class="text-link" href="#task/'+update.task+'">← '+esc(task?.title || "Task details")+'</a>'+
     panel("Work update",'<strong>'+esc(person(update.author))+'</strong><p>Work date · '+esc(update.work_date || update.posted_at.slice(0,10))+
       '</p><small>Posted '+esc(new Date(update.posted_at).toLocaleString())+'</small><pre>'+esc(update.body)+'</pre>'+
-      (file?documentCard(file):""));
+      (file?documentCard(file):"")+
+      (!workspace.demo && (update.author===workspace.actor || team.can_delete_documents)?
+        '<button type="button" class="delete-docs" data-delete-update="'+update.id+'">Delete work update</button>':""));
 }
 function taskFlowcharts(id){
   const linked=new Set(team.resource_links.filter(l=>l.kind==="charts" && l.task===id).map(l=>l.resource));
@@ -279,10 +281,14 @@ function meetingCalendar(){
   const count=new Date(year,month,0).getDate();
   const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>'<strong>'+d+'</strong>');
   for(let i=0;i<offset;i++)days.push('<div></div>');
+  const scheduled=tasks().filter(t=>t.record_date?.startsWith(meetingMonth));
+  const googleTasks=new Set(team.calendar_task_events.map(e=>e.task+"|"+e.day));
   for(let n=1;n<=count;n++){
     const day=meetingMonth+"-"+String(n).padStart(2,"0");
     const meetings=team.meetings.filter(m=>m.day===day);
     days.push('<div class="cal-day"><time datetime="'+day+'">'+n+'</time>'+
+      scheduled.filter(t=>t.record_date===day && !googleTasks.has(t.id+"|"+day)).map(t=>
+        '<a class="cal-meeting" href="#task/'+t.id+'">'+esc(t.title)+'</a>').join("")+
       meetings.map(m=>'<button class="cal-meeting" data-meeting="'+m.id+'">'+esc(m.title)+'</button>').join("")+'</div>');
   }
   return fold("month-grid","Calendar",'<div class="cal-controls"><button class="secondary" data-month-shift="-1" aria-label="Previous month">←</button>'+
@@ -626,13 +632,32 @@ view.addEventListener("click",async event=>{
   if(link){perform(link,()=>api("/api/google/link",{task:link.dataset.task,event:link.dataset.linkEvent}));return;}
   const page=event.target.closest("[data-events-page]");
   if(page){searchMeetings(view.querySelector('[data-op="meeting-search"]'),page.dataset.eventsPage).catch(e=>feedback.textContent=e.message);return;}
+  const deleteUpdate=event.target.closest("[data-delete-update]");
+  if(deleteUpdate){
+    const update=team.task_updates.find(u=>String(u.id)===deleteUpdate.dataset.deleteUpdate);
+    if(update && confirm("Delete this work update? Any attached document will stay on the task.")){
+      perform(deleteUpdate,async()=>{
+        await api("/api/team/delete-work-update",{id:update.id,task:update.task,posted_at:update.posted_at});
+        location.hash="#task/"+update.task;
+      });
+    }
+    return;
+  }
   const calendarButton=event.target.closest("[data-calendar-task]");
   if(calendarButton){
+    const tab=window.open("about:blank","_blank");
+    if(!tab){feedback.textContent="Allow pop-ups for Lysim to open Google Calendar in a new tab.";return;}
+    tab.opener=null;
+    tab.document.title="Opening Google Calendar";
+    tab.document.body.textContent="Opening Google Calendar…";
     calendarButton.disabled=true;
+    let opened=false;
     try {
       const result=await api("/api/google/add",{task:Number(calendarButton.dataset.calendarTask),today:dateNow()});
-      location.assign(result.url);
-    } catch(error){feedback.textContent=error.message;calendarButton.disabled=false;}
+      tab.location.replace(result.url);opened=true;
+      if(result.meeting)await refresh();
+    } catch(error){if(!opened)tab.close();feedback.textContent=error.message;}
+    finally{calendarButton.disabled=false;}
     return;
   }
   const toggle=event.target.closest("[data-task-status]");
@@ -664,3 +689,8 @@ refresh().catch(error=>feedback.textContent=error.message);
 window.addEventListener("pageshow", event => {
   if (event.persisted) location.reload();
 });
+
+if("BroadcastChannel" in window){
+  const calendarChanges=new BroadcastChannel("lysim-calendar");
+  calendarChanges.onmessage=()=>refresh().catch(error=>feedback.textContent=error.message);
+}

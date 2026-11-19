@@ -346,6 +346,19 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, ENCODED_LIMIT+65536)
     op = path.rsplit("/",1)[-1]
+    if op=="delete-work-update":
+        conn.execute("BEGIN IMMEDIATE")
+        update=conn.execute("SELECT * FROM task_updates WHERE id=? AND task=? AND posted_at=?",
+            (data.get("id"),data.get("task"),data.get("posted_at"))).fetchone()
+        if not update:
+            raise LookupError("Work update unavailable.")
+        if handler.server.demo or (actor!=update["author"] and not can_delete_documents(conn,actor,False)):
+            raise PermissionError("Only the author or an administrator can delete this update.")
+        conn.execute("DELETE FROM task_update_details WHERE update_id=?",(update["id"],))
+        conn.execute("DELETE FROM task_updates WHERE id=?",(update["id"],))
+        conn.commit()
+        handler.json(200,{"saved":True})
+        return True
     if op=="delete-documents":
         conn.execute("BEGIN IMMEDIATE")
         if not can_delete_documents(conn,actor,handler.server.demo):
