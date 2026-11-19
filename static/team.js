@@ -20,6 +20,12 @@ function select(name,label,values,selected) {
   return '<label>'+label+'<select name="'+name+'">'+choices(values,selected)+'</select></label>';
 }
 function form(op,title,fields) {
+  if(op!=="meeting-search"){
+    return '<button type="button" class="workspace-action" data-show-form>'+esc(title)+'</button>'+
+      '<dialog aria-label="'+esc(title)+'"><div class="dialog-head"><h2>'+esc(title)+'</h2>'+
+      '<button type="button" class="close" data-close-form aria-label="Close">×</button></div>'+
+      '<form class="form-grid" data-op="'+op+'">'+fields+'<p class="form-error wide" role="alert"></p><button class="primary">Save</button></form></dialog>';
+  }
   return '<details class="panel entry"><summary>'+title+'</summary><form class="form-grid" data-op="'+op+'">'+fields+
     '<button class="primary">Save</button></form></details>';
 }
@@ -278,6 +284,7 @@ async function api(url,data,method="POST") {
 }
 async function refresh() {
   [workspace,team]=await Promise.all([api("/api/workspace"),api("/api/team")]);
+  showProfile(person(workspace.actor));
   document.querySelector("#community").innerHTML=team.community?'<a target="_blank" rel="noopener noreferrer" href="'+esc(team.community)+'">WhatsApp community ↗</a>':"";
   render();
 }
@@ -377,6 +384,9 @@ for(const trigger of ["pointerover","focusin"]){
   view.addEventListener(trigger,event=>loadReader(event.target.closest(".doc-card")?.querySelector(".doc-peek [data-reader]"),true));
 }
 view.addEventListener("click",async event=>{
+  const opener=event.target.closest("[data-show-form]");
+  if(opener){opener.nextElementSibling.showModal();return;}
+  if(event.target.closest("[data-close-form]")){event.target.closest("dialog").close();return;}
   const turn=event.target.closest("[data-turn]");
   if(turn){const host=turn.closest(".reader-body");pdfPage(host,Number(host.dataset.page)+Number(turn.dataset.turn));return;}
   if(event.target.closest("[data-create-task]")){view.querySelector("#create-task").showModal();return;}

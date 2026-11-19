@@ -110,10 +110,7 @@ window.addEventListener("hashchange", () => { if (state) render(); });
 
 request("/api/workspace").then((data) => {
   state = data;
-  document.querySelector("#identity").innerHTML = '<span class="avatar" aria-hidden="true">' +
-    safe(person(state.actor).slice(0, 1).toUpperCase()) + '</span><span><strong>' + safe(person(state.actor)) +
-    '</strong><small>Founder</small></span>';
-  document.querySelector("#environment").textContent = state.demo ? "Demo workspace" : "Private workspace";
+  showProfile(person(state.actor));
   render();
 }).catch((error) => {
   workspace.innerHTML = '<p class="empty" role="alert">Could not load the workspace. ' + safe(error.message) + '</p>';

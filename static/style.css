@@ -229,3 +229,16 @@ dialog::backdrop { background: #17251f85; }
 .reader-image {display:block;max-width:100%;height:auto;margin:12px auto;}
 .reader-body {white-space:pre-wrap;overflow-wrap:anywhere;max-height:75vh;overflow:auto;background:white;padding:12px;}
 .page-controls {position:sticky;top:0;background:white;padding:6px;text-align:center;}
+
+.workspace-action,.back-button { border:0; border-radius:7px; cursor:pointer; font:inherit; font-weight:650; }
+.workspace-action { margin:4px 8px 12px 0; background:#275c53; color:white; padding:8px 14px; font-size:.88rem; }
+.workspace-action:hover,.create-task:hover { background:#174a41; }
+.back-button { background:transparent; color:#234c43; padding:7px 10px; }
+.back-button:hover,.back-button:focus-visible { background:#d7e9e0; }
+.panel-head,.dialog-head {background:#d7e9e0;color:#163f36;}
+.identity {color:#eff6e6;text-decoration:none;flex-shrink:0;}
+.identity:hover,.identity:focus-visible {background:#2b3d30;border-radius:8px;}
+dialog .form-grid label {display:grid;margin:0;min-width:0;}
+dialog .form-grid :is(input:not([type=checkbox]),select,textarea) {width:100%;margin:0;box-sizing:border-box;}
+dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
+@media(max-width:740px){.identity > span + span {display:block;max-width:36vw;}.identity strong {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}

@@ -42,7 +42,7 @@ async function refresh() {
   byId("start").hidden = info.enrolled;
   byId("codes").hidden = !info.enrolled;
   byId("identity-label").textContent = info.display;
-  byId("identity").textContent = info.display;
+  showProfile(info.display);
   byId("approvals").hidden = !info.admin;
   byId("admin").hidden = !info.admin;
   if (info.admin) {
