@@ -280,14 +280,14 @@ def handle(handler, conn, path, actor):
         raise LookupError("Unknown workspace operation.")
     data = payload(handler, ENCODED_LIMIT+65536)
     op = path.rsplit("/",1)[-1]
-    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update","edit-note","note-photo"):
+    if op in ("lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update","edit-note","note-photo","note-file"):
         conn.execute("BEGIN IMMEDIATE")
         token = string(data,"request_key",64,True)
         if token:
             if not conn.execute("INSERT OR IGNORE INTO commercial_writes VALUES(?,?,?)",(token,op,actor)).rowcount:
                 handler.json(200,{"saved":True})
                 return True
-        if op not in ("document","task-update","edit-note","note-photo"):
+        if op not in ("document","task-update","edit-note","note-photo","note-file"):
             commercial.apply(conn,op,data,actor)
             conn.commit()
             handler.json(200,{"saved":True})
@@ -298,9 +298,11 @@ def handle(handler, conn, path, actor):
         stamp = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
         if op == "note":
             token = string(data,"request_key",64)
-            conn.execute(f"""INSERT INTO shared_notes(title,contact,company,phone,email,body,author,edited_by,request_key,updated_at)
+            created = conn.execute(f"""INSERT INTO shared_notes(title,contact,company,phone,email,body,author,edited_by,request_key,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,{stamp}) ON CONFLICT(author,request_key) DO NOTHING""", (*values,actor,actor,token))
             note_id = conn.execute("SELECT id FROM shared_notes WHERE author=? AND request_key=?",(actor,token)).fetchone()[0]
+            if created.rowcount:
+                commercial.link_task(conn,"notes",note_id,data)
             conn.commit()
             handler.json(200,{"id":note_id})
             return True
@@ -308,13 +310,11 @@ def handle(handler, conn, path, actor):
                 updated_at={stamp},version=version+1 WHERE id=? AND version=?""",
                 (*values,actor,data.get("id"),data.get("version"))).rowcount:
             raise ValueError("This note changed. Reopen it before saving your edits.")
-    elif op == "note-photo":
+        commercial.link_task(conn,"notes",data["id"],data)
+    elif op in ("note-file","note-photo"):
         if not conn.execute("SELECT 1 FROM shared_notes WHERE id=?",(data.get("id"),)).fetchone():
             raise LookupError("Note not found.")
         file = string(data,"file",ENCODED_LIMIT)
-        signature = base64.b64decode(file[:12],validate=True)
-        if not commercial.preview_type(signature).startswith("image/"):
-            raise ValueError("Choose a JPEG or PNG photo.")
         doc = upload(conn,{"file":file,"filename":data.get("filename")},actor,"Shared note")
         conn.execute("INSERT INTO note_photos VALUES(?,?)",(doc,data["id"]))
     elif op == "document":

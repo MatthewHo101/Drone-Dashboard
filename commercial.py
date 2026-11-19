@@ -142,7 +142,7 @@ def link_task(conn,kind,resource,data):
     task=data["task"] or None
     if task and not conn.execute("SELECT 1 FROM records WHERE id=? AND kind='issues'",(task,)).fetchone():
         raise ValueError("Choose an existing task.")
-    table={"sales":"sales","commercial":"opportunities","charts":"charts","orders":"orders","documents":"documents"}[kind]
+    table={"sales":"sales","commercial":"opportunities","charts":"charts","orders":"orders","documents":"documents","notes":"shared_notes"}[kind]
     row=require_row(conn,table,resource)
     if kind in ("orders","documents"):
         doc=row["document"] if kind=="orders" else resource

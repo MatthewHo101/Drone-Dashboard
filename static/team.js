@@ -59,11 +59,11 @@ function taskAssociation(kind,id,current=resourceTask(kind,id)){
     form("resource-task",task?"Change linked task":"Link task",hiddenId("kind",kind)+hiddenId("resource",id)+taskSelect(current));
 }
 function relatedRecords(task){
-  const sources={orders:[team.orders,"Purchase"],sales:[team.sales,"Sales order"],commercial:[team.opportunities,"Opportunity"],charts:[team.charts,"Flowchart"]};
+  const sources={notes:[team.notes,"Note"],orders:[team.orders,"Purchase"],sales:[team.sales,"Sales order"],commercial:[team.opportunities,"Opportunity"],charts:[team.charts,"Flowchart"]};
   const rows=team.resource_links.filter(l=>l.task===task).map(l=>{
     const [records,label]=sources[l.kind];
     const record=records.find(r=>r.id===l.resource);
-    return record?recordRow("#"+l.kind+"/"+record.id,record.title||record.invoice,label):"";
+    return record?recordRow("#"+l.kind+"/"+record.id,(l.kind==="notes"?noteTitle(record):record.title||record.invoice),label):"";
   }).join("");
   return rows?panel("Linked records",rows):"";
 }
@@ -212,7 +212,9 @@ function documents() {
       (order?row("Purchase invoice",esc(order.supplier)+" · "+esc(order.invoice)):"")+'</dl>'+(doc.update_id?'':taskAssociation('documents',doc.id,doc.task))+reader(doc)+download(doc));
   }
   return form("document","Upload a document",taskSelect()+select("sale","Sales order",[["","Unassigned"],...team.sales.map(s=>[s.id,"SO-"+s.id+" · "+s.title])])+input("file","Document · up to 20 MiB","file"))+
-    '<div class="document-list">'+team.documents.map(doc=>{
+    '<div class="document-list">'+team.documents.map(documentCard).join("")+'</div>';
+}
+function documentCard(doc){
       const details="#documents/"+doc.id;
       const date=doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString():"Not recorded";
       const uploader=doc.uploader?person(doc.uploader):"Not recorded";
@@ -222,7 +224,6 @@ function documents() {
       return '<article class="doc-card"><a class="doc-hit" href="'+details+'"><span class="doc-thumb">'+thumb+'</span><span><strong>'+esc(doc.name)+
         '</strong><small>'+esc(date)+' · '+esc(uploader)+'</small></span></a>'+
         (peek?'<div class="doc-peek" aria-hidden="true">'+peek+'</div>':"")+'</article>';
-    }).join("")+'</div>';
 }
 function meetingCalendar(){
   const [year,month]=meetingMonth.split("-").map(Number);
@@ -270,39 +271,57 @@ function noteForm(note){
   const n=note || {};
   const fields=valueInput("title","Title",n.title)+valueInput("contact","Contact name",n.contact)+
     valueInput("company","Company",n.company)+valueInput("phone","Phone",n.phone,"tel")+
-    valueInput("email","Email",n.email)+
+    valueInput("email","Email",n.email)+taskSelect(resourceTask("notes",n.id))+
     '<label class="wide">Notes<textarea name="body" rows="5" maxlength="16000">'+esc(n.body)+'</textarea></label>';
   return form(note?"edit-note":"note",note?"Edit note":"New note",
-    (note?hiddenId("id",note.id)+hiddenId("version",note.version):"")+fields+(note?"":photoInput()));
+    (note?hiddenId("id",note.id)+hiddenId("version",note.version):"")+fields+(note?"":attachmentInput()));
 }
-function photoInput(){
-  return input("photos","Photos · JPEG or PNG, up to 20 MiB each","file",'accept="image/jpeg,image/png" multiple');
+function attachmentInput(){
+  return input("attachments","Attachments · up to 20 MiB each","file","multiple");
+}
+let noteSort="date";
+function noteRows(){
+  const titles=new Map(tasks().map(t=>[t.id,t.title]));
+  const linked=new Map(team.resource_links.filter(l=>l.kind==="notes").map(l=>[l.resource,l.task]));
+  const taskName=n=>titles.get(linked.get(n.id)) || "";
+  const byDate=(a,b)=>b.updated_at.localeCompare(a.updated_at)||b.id-a.id;
+  const rows=team.notes.slice().sort((a,b)=>{
+    if(noteSort==="author")return person(a.author).localeCompare(person(b.author))||byDate(a,b);
+    if(noteSort==="task")return Number(!taskName(a))-Number(!taskName(b))||taskName(a).localeCompare(taskName(b))||byDate(a,b);
+    return byDate(a,b);
+  });
+  return rows.map(n=>{
+    const meta=[new Date(n.updated_at).toLocaleDateString(),person(n.author),taskName(n),n.company,n.phone].filter(Boolean);
+    const files=team.documents.filter(d=>d.note===n.id);
+    return '<div class="note-row" data-note-id="'+n.id+'">'+recordRow("#notes/"+n.id,noteTitle(n),meta.join(" · "))+
+      (files.length?'<div class="document-list">'+files.slice(0,1).map(documentCard).join("")+'</div>':"")+'</div>';
+  }).join("");
 }
 function notes(){
   const id=location.hash.split("/")[1];
   if(!id){
-    const items=team.notes.map(n=>recordRow("#notes/"+n.id,noteTitle(n),
-      [n.contact,n.company,n.phone,n.email].filter(v=>v && v!==noteTitle(n)).join(" · ") || new Date(n.updated_at).toLocaleDateString())).join("");
-    const search=items?'<input class="note-search" type="search" aria-label="Search notes" placeholder="Search notes or contacts"><p data-no-notes hidden>No matching notes.</p>':"";
-    return noteForm()+panel("Shared notes",search+(items || '<p class="empty">No notes yet.</p>'));
+    const items=noteRows();
+    const tools=items?'<div class="note-tools"><input class="note-search" type="search" aria-label="Search notes" placeholder="Search notes or contacts">'+
+      '<label>Sort by <select name="noteSort">'+choices([["date","Last updated"],["author","Added by"],["task","Linked task"]],noteSort)+'</select></label></div><p data-no-notes hidden>No matching notes.</p>':"";
+    return noteForm()+panel("Shared notes",tools+'<div class="note-rows">'+(items || '<p class="empty">No notes yet.</p>')+'</div>');
   }
   const back='<a class="text-link" href="#notes">← Shared notes</a>';
   const n=team.notes.find(note=>String(note.id)===id);
   if(!n)return back+"<p>Note unavailable.</p>";
   const details=[["Contact",n.contact],["Company",n.company],["Phone",n.phone],["Email",n.email]]
     .filter(([,value])=>value).map(([label,value])=>'<div class="detail-item"><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join("");
-  const photos=team.documents.filter(doc=>doc.note===n.id).map(doc=>
-    '<a href="#documents/'+doc.id+'"><img loading="lazy" src="/previews/'+doc.id+'" alt="'+esc(doc.name)+'"></a>').join("");
-  return back+panel(noteTitle(n),'<dl class="details">'+details+'</dl><pre>'+esc(n.body)+'</pre><small>Added by '+
+  const files=team.documents.filter(doc=>doc.note===n.id).map(documentCard).join("");
+  const linkedTask=tasks().find(t=>t.id===resourceTask("notes",n.id));
+  return back+panel(noteTitle(n),'<dl class="details">'+details+'</dl>'+(linkedTask?recordRow('#task/'+linkedTask.id,linkedTask.title,'Linked task'):'')+'<pre>'+esc(n.body)+'</pre><small>Added by '+
     esc(person(n.author))+' · Updated '+esc(new Date(n.updated_at).toLocaleString())+' by '+esc(person(n.edited_by))+'</small>'+
-    noteForm(n)+form("note-photo","Add photos",hiddenId("id",n.id)+photoInput())+'<div class="note-photos">'+photos+'</div>');
+    noteForm(n)+form("note-file","Add files",hiddenId("id",n.id)+attachmentInput())+'<div class="document-list">'+files+'</div>');
 }
 function charts() {
   const create=form("chart","Create a flowchart",input("title","Chart name")+taskSelect()+
     '<div class="wide"><button type="button" data-open-editor>Open graphical editor</button><flow-canvas editable hidden></flow-canvas></div>');
   const selected=location.hash.split("/")[1];
   return create+team.charts.filter(c=>!selected||String(c.id)===selected).map(c=>
-    fold("chart-"+c.id,c.title,'<div class="chart-actions">'+form("edit-chart","Edit flowchart",hiddenId("id",c.id)+'<flow-canvas class="wide" editable data-chart="'+c.id+'"></flow-canvas>')+taskAssociation("charts",c.id)+'</div><flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
+    fold("chart-"+c.id,c.title,'<div class="chart-actions">'+form("edit-chart","Edit flowchart",hiddenId("id",c.id)+'<flow-canvas class="wide" editable data-chart="'+c.id+'"></flow-canvas>')+taskAssociation("charts",c.id)+'<div class="chart-zoom" role="group" aria-label="Chart view"><button type="button" data-view-tool="out" aria-label="Zoom out" title="Zoom out">−</button><button type="button" data-view-tool="in" aria-label="Zoom in" title="Zoom in">+</button><button type="button" data-view-tool="fit">Fit chart</button></div></div><flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
@@ -376,11 +395,11 @@ async function encodeFile(file){
     reader.readAsDataURL(file);
   });
 }
-async function saveNotePhotos(form,id,photos){
-  form.photoKeys ||= new Map();
-  for(const photo of photos){
-    if(!form.photoKeys.has(photo))form.photoKeys.set(photo,crypto.randomUUID());
-    await api("/api/team/note-photo",{id,filename:photo.name,file:await encodeFile(photo),request_key:form.photoKeys.get(photo)});
+async function saveNoteFiles(form,id,files){
+  form.fileKeys ||= new Map();
+  for(const file of files){
+    if(!form.fileKeys.has(file))form.fileKeys.set(file,crypto.randomUUID());
+    await api("/api/team/note-file",{id,filename:file.name,file:await encodeFile(file),request_key:form.fileKeys.get(file)});
   }
 }
 view.addEventListener("submit",event=>{
@@ -393,20 +412,20 @@ view.addEventListener("submit",event=>{
   perform(form.querySelector("button.primary") || form.querySelector("button"),async()=>{
     const fields=new FormData(form);
     const data=Object.fromEntries(fields);
-    if(op==="note" || op==="note-photo"){
-      const photos=Array.from(form.elements.photos.files);
-      for(const photo of photos){
-        if(!photo.size || photo.size>20*1024*1024 || !/\.(png|jpe?g)$/i.test(photo.name))
-          throw Error("Choose JPEG or PNG photos up to 20 MiB each.");
+    if(op==="note" || op==="note-file"){
+      const files=Array.from(form.elements.attachments.files);
+      for(const file of files){
+        if(!file.size || file.size>20*1024*1024)
+          throw Error("Choose nonempty files up to 20 MiB each.");
       }
-      delete data.photos;
+      delete data.attachments;
       let id=data.id;
       if(op==="note"){
         form.dataset.key ||= crypto.randomUUID();
         id=(await api("/api/team/note",{...data,request_key:form.dataset.key})).id;
       }
-      try { await saveNotePhotos(form,id,photos); }
-      catch(error){ throw Error("The note is saved. "+error.message+" Retry to finish uploading photos."); }
+      try { await saveNoteFiles(form,id,files); }
+      catch(error){ throw Error("The note is saved. "+error.message+" Retry to finish uploading files."); }
       location.hash="#notes/"+id;
       return;
     }
@@ -443,11 +462,15 @@ view.addEventListener("input",event=>{
   const query=event.target.value.trim().toLowerCase();
   const visible=new Set(team.notes.filter(n=>[n.title,n.contact,n.company,n.phone,n.email,n.body]
     .some(value=>value.toLowerCase().includes(query))).map(n=>"#notes/"+n.id));
-  for(const row of view.querySelectorAll(".record-row"))row.hidden=!visible.has(row.getAttribute("href"));
+  for(const row of view.querySelectorAll("[data-note-id]"))row.hidden=!visible.has("#notes/"+row.dataset.noteId);
   view.querySelector("[data-no-notes]").hidden=visible.size>0;
 });
 view.addEventListener("change",event=>{
   const control=event.target;
+  if(control.name==="noteSort"){
+    noteSort=control.value; view.querySelector(".note-rows").innerHTML=noteRows();
+    view.querySelector(".note-search").dispatchEvent(new Event("input",{bubbles:true})); return;
+  }
   if(control.name==="categoryFilter"){purchaseCategory=control.value;render();return;}
   if(control.name==="owner"){
     for(const box of control.form.querySelectorAll('[name="liable"]')){
@@ -490,6 +513,8 @@ for(const trigger of ["pointerover","focusin"]){
   view.addEventListener(trigger,event=>loadReader(event.target.closest(".doc-card")?.querySelector(".doc-peek [data-reader]"),true));
 }
 view.addEventListener("click",async event=>{
+  const zoom=event.target.closest("[data-view-tool]");
+  if(zoom){zoom.closest(".chart-actions").nextElementSibling.tool(zoom.dataset.viewTool);return;}
   const opener=event.target.closest("[data-show-form]");
   if(opener){
     const dialog=opener.nextElementSibling;

@@ -300,3 +300,20 @@ dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}
 .note-photos {display:flex;flex-wrap:wrap;gap:8px;}
 .note-photos img {display:block;width:100px;height:80px;object-fit:cover;border-radius:6px;}
 .note-search {width:min(100%,26rem);margin-bottom:10px;} .entries .record-row[hidden],.entries [data-no-notes][hidden] {display:none;}
+.chart-actions {gap:8px;padding:7px 9px;border:1px solid var(--border);border-radius:9px;background:#f3f6f1;}
+.chart-actions > .workspace-action,.chart-zoom button {min-height:30px;padding:4px 10px;font:inherit;font-size:.83rem;font-weight:600;border-radius:6px;}
+.chart-actions > .workspace-action:not(:first-child),.chart-zoom button {background:white;color:#234c40;border:1px solid #c4d2c9;}
+.chart-actions > .text-link {display:inline-block;max-width:24ch;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;font-size:.82rem;}
+.chart-zoom {margin-left:auto;display:flex;align-items:center;}
+.chart-zoom button {border-radius:0;cursor:pointer;}
+.chart-zoom button + button {border-left:0;}
+.chart-zoom button:first-child {border-radius:6px 0 0 6px;}
+.chart-zoom button:last-child {border-radius:0 6px 6px 0;}
+.chart-zoom button:hover,.chart-actions > .workspace-action:not(:first-child):hover {background:#e5efe7;}
+.chart-actions + flow-canvas > .flow-tools {display:none;}
+.note-tools {display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.note-tools .note-search {margin:0;max-width:100%;}
+.note-row {padding:6px 0;border-bottom:1px solid var(--border);}
+.note-row:last-child {border:0;}
+.note-row .document-list {margin:4px 0 8px;max-width:26rem;}
+.note-row[hidden] {display:none;}
