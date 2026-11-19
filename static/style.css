@@ -290,3 +290,7 @@ flow-canvas[hidden] {display:none;}
 .flow-surface g.selected rect,.flow-surface g.selected polygon {stroke:#2457ac;stroke-width:3;}
 .flow-surface text {font:13px system-ui;}
 dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}
+.flow-palette button {display:grid;justify-items:center;gap:4px;min-width:76px;}
+.flow-palette svg {fill:#edf5df;stroke:#58735c;stroke-width:2;}
+.flow-link.chosen {stroke:#2457ac;}
+.flow-guides path {stroke:#287cb2;stroke-dasharray:4 4;vector-effect:non-scaling-stroke;pointer-events:none;}

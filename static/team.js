@@ -264,11 +264,11 @@ function meetings() {
     '<button class="secondary" data-summary="'+m.id+'">'+(m.summary?"Regenerate":"Summarize notes")+'</button>')+'</div>').join("")||'<p>No meetings yet.</p>',true);
 }
 function charts() {
-  const create=form("chart","Create a flowchart",taskSelect()+input("title","Chart name")+
+  const create=form("chart","Create a flowchart",input("title","Chart name")+taskSelect()+
     '<div class="wide"><button type="button" data-open-editor>Open graphical editor</button><flow-canvas editable hidden></flow-canvas></div>');
   const selected=location.hash.split("/")[1];
   return create+team.charts.filter(c=>!selected||String(c.id)===selected).map(c=>
-    fold("chart-"+c.id,c.title,taskAssociation("charts",c.id)+'<flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
+    fold("chart-"+c.id,c.title,form("edit-chart","Edit flowchart",hiddenId("id",c.id)+'<flow-canvas class="wide" editable data-chart="'+c.id+'"></flow-canvas>')+taskAssociation("charts",c.id)+'<flow-canvas data-chart="'+c.id+'"></flow-canvas>',Boolean(selected))).join("");
 }
 function amount(minor) {
   return (minor/100n).toString()+"."+(minor%100n).toString().padStart(2,"0");
@@ -343,7 +343,10 @@ view.addEventListener("submit",event=>{
   perform(form.querySelector("button.primary") || form.querySelector("button"),async()=>{
     const fields=new FormData(form);
     const data=Object.fromEntries(fields);
-    if(op==="chart")data.graph=form.querySelector("flow-canvas").graph;
+    if(op==="chart" || op==="edit-chart") {
+      data.graph=form.querySelector("flow-canvas").graph;
+      if(op==="edit-chart")data.previous=team.charts.find(c=>String(c.id)===data.id).graph;
+    }
     if(op==="task"||op==="edit-task")data.liable=fields.getAll("liable");
     if (["lead","sale","convert","fulfillment","item","charge","payment","allocate","document","task-update"].includes(op)) {
       form.dataset.key ||= crypto.randomUUID();
@@ -420,7 +423,12 @@ for(const trigger of ["pointerover","focusin"]){
 }
 view.addEventListener("click",async event=>{
   const opener=event.target.closest("[data-show-form]");
-  if(opener){opener.nextElementSibling.showModal();return;}
+  if(opener){
+    const dialog=opener.nextElementSibling;
+    const editor=dialog.querySelector('[data-op="edit-chart"] flow-canvas');
+    if(editor)editor.replaceWith(editor.cloneNode(false));
+    dialog.showModal();return;
+  }
   if(event.target.closest("[data-close-form]")){event.target.closest("dialog").close();return;}
   const turn=event.target.closest("[data-turn]");
   if(turn){const host=turn.closest(".reader-body");pdfPage(host,Number(host.dataset.page)+Number(turn.dataset.turn));return;}

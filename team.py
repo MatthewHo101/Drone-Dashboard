@@ -359,13 +359,23 @@ def handle(handler, conn, path, actor):
             raise LookupError("Meeting not found.")
         summary = summarize(row["notes"])
         conn.execute("UPDATE meetings SET summary=? WHERE id=?", (summary,data["id"]))
-    elif op == "chart":
+    elif op in ("chart", "edit-chart"):
         edges = string(data,"edges",4000,True)
         for line in edges.splitlines():
             nodes = line.split("->")
             if len(nodes) != 2 or not all(node.strip() for node in nodes):
                 raise ValueError("Enter one connection per line, such as Design -> Review.")
-        chart = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",(string(data,"title",160,True) or "Untitled flowchart",edges))
+        if op == "chart":
+            chart_id = conn.execute("INSERT INTO charts(title,edges) VALUES(?,?)",
+                (string(data,"title",160,True) or "Untitled flowchart",edges)).lastrowid
+            commercial.link_task(conn,"charts",chart_id,data)
+            conn.execute("INSERT INTO chart_projects VALUES(?,?)",(chart_id,string(data,"project",100,True)))
+        else:
+            chart_id = data.get("id")
+            if not conn.execute("SELECT 1 FROM charts WHERE id=?", (chart_id,)).fetchone():
+                raise LookupError("Flowchart not found.")
+            if "graph" not in data or "previous" not in data:
+                raise ValueError("Missing flowchart layout.")
         if "graph" in data:
             graph = data["graph"]
             if not isinstance(graph, dict):
@@ -384,9 +394,14 @@ def handle(handler, conn, path, actor):
             for link in links:
                 if not isinstance(link,list) or len(link)!=2 or any(type(i) is not int or i not in ids for i in link):
                     raise ValueError("Invalid flowchart connection.")
-            conn.execute("INSERT INTO chart_layout VALUES(?,?)",(chart.lastrowid,json.dumps(graph)))
-        commercial.link_task(conn,"charts",chart.lastrowid,data)
-        conn.execute("INSERT INTO chart_projects VALUES(?,?)",(chart.lastrowid,string(data,"project",100,True)))
+            saved = json.dumps(graph)
+            if data.get("previous") is None:
+                changed = conn.execute("INSERT OR IGNORE INTO chart_layout VALUES(?,?)",(chart_id,saved))
+            else:
+                changed = conn.execute("UPDATE chart_layout SET graph=? WHERE chart=? AND graph=?",
+                    (saved,chart_id,data["previous"]))
+            if not changed.rowcount:
+                raise ValueError("Another user saved this chart. Reload before editing again.")
     else:
         raise LookupError("Unknown workspace operation.")
     conn.commit()
