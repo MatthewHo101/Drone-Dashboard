@@ -224,8 +224,8 @@ dialog::backdrop { background: #17251f85; }
 .file-type {font-size:.7rem;font-weight:700;}
 .doc-peek {display:none;position:absolute;z-index:5;top:85%;left:12px;width:min(280px,80vw);max-height:190px;overflow:hidden;padding:8px;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 22px #17251f33;white-space:pre-wrap;pointer-events:none;}
 .doc-peek img {display:block;max-width:100%;max-height:170px;margin:auto;}
-@media(hover:hover){.doc-card:hover .doc-peek {display:block;}}
-.doc-card:focus-within .doc-peek {display:block;}
+@media(hover:hover){:is(.doc-card,.task-preview):has(> a > .doc-thumb:hover) > .doc-peek {display:block;}}
+:is(.doc-card,.task-preview):has(> a:focus-visible) > .doc-peek {display:block;}
 .reader-image {display:block;max-width:100%;height:auto;margin:12px auto;}
 .reader-body {white-space:pre-wrap;overflow-wrap:anywhere;max-height:75vh;overflow:auto;background:white;padding:12px;}
 .page-controls {position:sticky;top:0;background:white;padding:6px;text-align:center;}
@@ -324,3 +324,6 @@ dialog:has(flow-canvas:not([hidden])) {width:min(960px,calc(100% - 24px));}
 .doc-peek .doc-thumb img {width:auto;height:auto;max-width:100%;max-height:170px;object-fit:contain;}
 @media(max-width:560px){.note-meta {display:none;}}
 .entries .note-row + .note-row {margin-top:0;border-top:1px solid var(--border);}
+
+#workspace > .panel + .panel-grid {margin-top:16px;}
+.board-files .doc-peek img {width:auto;height:auto;}

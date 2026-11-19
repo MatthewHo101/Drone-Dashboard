@@ -93,11 +93,10 @@ const boardState={Open:{expanded:true,sort:"Due date"},Done:{expanded:false,sort
 function taskRow(task){
   const priority=task.details.priority||"Normal";
   const people=(task.details.liable||[]).map(person).join(", ")||"None";
-  const files=team.documents.filter(doc=>doc.task===task.id).map(doc=>{
-    const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
-    return '<a href="#documents/'+doc.id+'">'+(doc.preview?'<img loading="lazy" src="'+src+doc.id+'" alt="">':"")+
-      '<span>'+esc(doc.name)+'</span></a>';
-  }).join("");
+  const linked=team.documents.filter(doc=>doc.task===task.id);
+  const visible=task.status==="Open"?linked.slice(0,3):linked;
+  const files=visible.map(doc=>'<div class="task-preview"><a href="#documents/'+doc.id+'">'+
+    attachmentThumbnail(doc)+'<span>'+esc(doc.name)+'</span></a>'+attachmentPeek(doc)+'</div>').join("");
   return '<article class="board-row"><div><a class="task-title" href="#task/'+task.id+'">'+esc(task.title)+'</a>'+
     '<p>Owner · '+esc(person(task.owner))+'　 Liable · '+esc(people)+'</p></div><div><strong class="priority-pill priority-'+esc(priority.toLowerCase())+'">'+esc(priority)+
     ' priority</strong><p>Due · '+esc(task.record_date||"Unscheduled")+'</p></div><div class="board-files">'+files+'</div></article>';
@@ -217,8 +216,8 @@ function documents() {
 }
 function attachmentThumbnail(doc){
   if(!doc)return "";
-  if(doc.preview){
-    const src=doc.preview==="application/pdf"?"/thumbnails/":"/previews/";
+  if(doc.preview || doc.reader==="docx"){
+    const src=doc.preview==="application/pdf" || doc.reader==="docx"?"/thumbnails/":"/previews/";
     return '<span class="doc-thumb"><img loading="lazy" src="'+src+doc.id+'" alt=""></span>';
   }
   const ext=doc.name.includes(".")?doc.name.split(".").pop().slice(0,8).toUpperCase():"File";
@@ -226,7 +225,7 @@ function attachmentThumbnail(doc){
 }
 function attachmentPeek(doc){
   if(!doc)return "";
-  const content=doc.preview?attachmentThumbnail(doc):doc.reader?'<div data-reader="'+doc.id+'">Loading preview…</div>':"";
+  const content=doc.preview || doc.reader==="docx"?attachmentThumbnail(doc):doc.reader?'<div data-reader="'+doc.id+'">Loading preview…</div>':"";
   return content?'<div class="doc-peek" aria-hidden="true">'+content+'</div>':"";
 }
 function documentCard(doc,compact=false){
@@ -390,7 +389,7 @@ async function refresh() {
 async function perform(control,action) {
   control.disabled=true;
   feedback.textContent="Working…";
-  try { await action(); await refresh(); feedback.textContent="Saved."; }
+  try { await action(); await refresh(); feedback.textContent=""; }
   catch(error){
     feedback.textContent=error.message;
     const local=control.closest("dialog")?.querySelector(".form-error");
@@ -538,13 +537,14 @@ function positionPreview(card){
 }
 for(const trigger of ["pointerover","focusin"]){
   view.addEventListener(trigger,event=>{
-    const card=event.target.closest(".doc-card");
+    const trigger=event.target.closest(".doc-thumb, a:focus-visible");
+    const card=trigger?.closest(".doc-card,.task-preview");
     positionPreview(card);
     loadReader(card?.querySelector(".doc-peek [data-reader]"),true);
   });
 }
 function repositionPreviews(){
-  view.querySelectorAll(".doc-card:hover,.doc-card:focus-within").forEach(positionPreview);
+  view.querySelectorAll(".doc-card:has(.doc-thumb:hover, a:focus-visible),.task-preview:has(.doc-thumb:hover, a:focus-visible)").forEach(positionPreview);
 }
 window.addEventListener("resize",repositionPreviews);
 window.addEventListener("scroll",repositionPreviews,true);

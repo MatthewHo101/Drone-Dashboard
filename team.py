@@ -155,6 +155,39 @@ def reader_type(name, signature):
     return "text" if suffix in ("txt","md","csv","log") else ""
 
 
+def docx_preview(body, thumbnail=False):
+    import io
+    import textwrap
+    import zipfile
+    import xml.etree.ElementTree as ET
+    from html import escape
+    with zipfile.ZipFile(io.BytesIO(body)) as archive:
+        if thumbnail:
+            for name in ("docProps/thumbnail.jpeg","docProps/thumbnail.jpg","docProps/thumbnail.png"):
+                if name in archive.namelist() and archive.getinfo(name).file_size <= 2*1024*1024:
+                    image = archive.read(name)
+                    mime = commercial.preview_type(image)
+                    if mime.startswith("image/"):
+                        return image,mime
+        part = archive.getinfo("word/document.xml")
+        if part.file_size > 12*1024*1024:
+            raise ValueError("Document is too large to preview.")
+        root = ET.fromstring(archive.read(part))
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    paragraphs = ("".join(t.text or "" for t in p.iter(ns+"t")) for p in root.iter(ns+"p"))
+    if not thumbnail:
+        return "\n".join(paragraphs)
+    lines = []
+    for paragraph in paragraphs:
+        if paragraph.strip():
+            lines.extend(textwrap.wrap(paragraph[:1600],width=44))
+        if len(lines)>=15:
+            break
+    rows = "".join(f'<text x="18" y="{32+i*16}">{escape(line)}</text>' for i,line in enumerate(lines[:15] or ["Word document"]))
+    page = f'<svg xmlns="http://www.w3.org/2000/svg" width="340" height="270"><rect width="100%" height="100%" fill="white"/><g font-family="monospace" font-size="11">{rows}</g></svg>'
+    return page.encode(),"image/svg+xml"
+
+
 def render_document(handler,conn,path):
     import io
     import zipfile
@@ -185,13 +218,7 @@ def render_document(handler,conn,path):
                 handler.send_body(200,image.stdout,"image/png")
             return
         if kind=="docx":
-            with zipfile.ZipFile(io.BytesIO(body)) as archive:
-                part=archive.getinfo("word/document.xml")
-                if part.file_size>12*1024*1024:
-                    raise ValueError("Document is too large to preview.")
-                root=ET.fromstring(archive.read(part))
-            ns="{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-            content="\n".join("".join(t.text or "" for t in paragraph.iter(ns+"t")) for paragraph in root.iter(ns+"p"))
+            content=docx_preview(body)
         elif kind=="doc":
             content=subprocess.run(["antiword","-"],input=body,capture_output=True,timeout=8,check=True).stdout.decode("utf8","replace")
         elif kind=="text":
@@ -213,6 +240,15 @@ def handle(handler, conn, path, actor):
             raise LookupError("Document not found.")
         import security
         if path.startswith("/thumbnails/"):
+            if reader_type(doc["name"],doc["body"][:8])=="docx":
+                import zipfile
+                import xml.etree.ElementTree as ET
+                try:
+                    image,mime=docx_preview(doc["body"],thumbnail=True)
+                except (zipfile.BadZipFile,KeyError,ET.ParseError) as error:
+                    raise ValueError("This document could not be previewed.") from error
+                handler.send_body(200,image,mime)
+                return True
             if commercial.preview_type(doc["body"]) != "application/pdf":
                 raise ValueError("This document has no PDF thumbnail.")
             document_id = path.split("/")[-1]
