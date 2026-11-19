@@ -12,7 +12,7 @@
 <label>New password<input name="replacement" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label>
 <label>Confirm new password<input name="repeat" type="password" autocomplete="new-password" required></label></fieldset>
 <button class="primary" id="sign-in">Sign in</button></form>
-<form id="create" hidden><label>New username<input name="name" required maxlength="40" autocomplete="off"></label>
+<form id="create" hidden><label>New username (8–40 characters)<input name="name" minlength="8" required maxlength="40" autocomplete="off"></label>
 <label>Display name<input name="display" required maxlength="80" autocomplete="nickname"></label>
 <label>New password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label>
 <label>Confirm password<input name="confirmation" type="password" required autocomplete="new-password"></label><button class="primary" id="submit-create">Request access</button></form>

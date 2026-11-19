@@ -79,6 +79,10 @@ controls.addEventListener("submit", async event=>{
     data.target = fields.target.value;
     if (!window.confirm(button.textContent+" for "+data.target+"?")) return;
   }
+  if (op==="delete") {
+    data.target=fields.target.value;
+    if(!window.confirm("Permanently delete "+data.target+"? Their sessions and credentials will be removed and their assigned work will transfer to you."))return;
+  }
   if (op==="reset") data.replacement=fields.replacement.value;
   if (op==="confirm") data.code=fields.code.value;
   if (op==="codes" && !window.confirm("Replace every unused recovery code?")) return;

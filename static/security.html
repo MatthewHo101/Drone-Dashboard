@@ -11,10 +11,10 @@
   </aside>
 <main><div class="topbar"><button id="sign-out" class="secondary">Sign out</button></div><div id="workspace">
 <header class="intro"><div><h1>Account</h1><p id="identity-label"></p></div></header><p id="state"></p><p role="status" id="message"></p>
-<section class="panel entries"><h2>Google Calendar</h2><button id="google-account" class="secondary">Connect Google Calendar</button></section>
 <form id="controls" class="form-grid" hidden>
 <label class="wide">Your current password<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
-<section class="panel wide" hidden id="approvals"><div class="entries"><h3>Registration requests</h3><label>Pending request <select name="request_id"></select></label>
+<section class="panel account-card"><div class="panel-head"><h2>Google Calendar</h2></div><div class="entries"><button type="button" id="google-account" class="secondary">Connect Google Calendar</button></div></section>
+<section class="panel account-card" hidden id="approvals"><div class="panel-head"><h2>Registration requests</h2></div><div class="entries"><label>Pending request <select name="request_id"></select></label>
 <button class="primary" value="approve">Approve request</button> <button class="secondary" value="reject">Reject request</button>
 </div></section>
 <label>Display name<input name="display" maxlength="80" autocomplete="nickname"></label><button class="secondary" value="profile">Save display name</button>
@@ -33,6 +33,7 @@
 <button class="secondary" value="grant">Grant administrator</button> <button class="secondary" value="demote">Remove administrator role</button>
 <label>New password for selected user <input name="replacement" type="password" autocomplete="new-password" maxlength="128"></label>
 <button class="secondary" value="reset">Reset password</button>
+<button class="danger-action" value="delete">Permanently delete user</button>
 <p><button class="secondary" value="require" id="require">Require 2FA for the workspace</button></p>
-<h3>Recent security activity</h3><ol id="events"></ol></div></section>
+<details class="workspace-fold"><summary>Recent security activity</summary><ol id="events"></ol></details></div></section>
 </form></div></main></body></html>

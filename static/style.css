@@ -264,3 +264,13 @@ dialog .form-grid > button {grid-column:1/-1;justify-self:start;}
 .priority-high {background:#ffdedb;color:#922c26;}
 .finance-link {display:block;text-decoration:none;color:inherit;}
 .finance-link:hover dd {text-decoration:underline;}
+
+#controls .account-card {align-self:stretch;margin:0;}
+.account-card .panel-head {min-height:48px;}
+.account-card .entries {display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+.danger-action {border:1px solid #ac4144;border-radius:7px;background:#fff4f4;color:#86292c;padding:8px 12px;cursor:pointer;}
+@media(min-width:741px){
+  .sidebar {padding-bottom:0;}
+  .sidebar > .identity {align-self:stretch;justify-content:center;margin-inline:-18px;padding:16px 18px;min-height:66px;box-sizing:border-box;}
+}
+@media(max-width:740px){.sidebar > .identity {padding:6px 8px;}}

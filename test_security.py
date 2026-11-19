@@ -227,7 +227,7 @@ class WorkspaceSecurity(unittest.TestCase):
 
     def test_reset_and_first_login(self):
         old = self.login()
-        self.call("/auth/request",{"name":"visitor","password":self.password},status=202)
+        self.call("/auth/request",{"name":"visitor1","password":self.password},status=202)
         with app.database(write=True) as conn:
             app.save_record(conn,dict(kind="builds",title="Build",owner="owner",status="Ready",airframe="A",revision="1"),"owner")
             activation = security.reset_accounts(conn,"temp-password")
@@ -244,11 +244,27 @@ class WorkspaceSecurity(unittest.TestCase):
         cookie=head.split(b"Set-Cookie: ")[1].split(b";")[0].decode()
         _,settings=self.call("/account/settings",cookie=cookie)
         self.assertTrue(settings["admin"])
-        self.assertEqual(settings["requests"][0]["name"],"visitor")
+        self.assertEqual(settings["requests"][0]["name"],"visitor1")
         self.call("/auth/login",initial,status=401)
 
+    def test_delete_user_and_registration_length(self):
+        admin=self.login()
+        self.call("/auth/request",dict(name="seven77",password=self.password),status=400)
+        self.approve_new("member01",admin)
+        member=self.login("member01")
+        self.call("/api/records",dict(kind="issues",status="Open",owner="member01"),member,201)
+        args=dict(password=self.password,target="owner")
+        self.call("/account/delete",args,member,403)
+        self.call("/account/delete",args,admin,400)
+        self.call("/account/delete",dict(args,target="member01"),admin)
+        self.call("/api/workspace",cookie=member,status=401)
+        with app.database() as conn:
+            self.assertFalse(security.exists(conn,"users","member01"))
+            self.assertEqual(conn.execute("SELECT owner FROM records").fetchone()[0],"owner")
+            self.assertEqual(list(conn.execute("PRAGMA foreign_key_check")),[])
+
     def test_registration_approval_and_profile(self):
-        request = {"name":"pilot","display":"Flight lead","password":self.password}
+        request = {"name":"pilot001","display":"Flight lead","password":self.password}
         self.call("/auth/request",request,status=202)
         self.call("/auth/request",dict(request,display="Replacement"),status=202)
         self.call("/auth/login",request,status=401)
@@ -261,17 +277,17 @@ class WorkspaceSecurity(unittest.TestCase):
         approval = {"request_id":pending[0]["id"],"password":self.password}
         self.call("/account/approve",approval,owner)
         self.call("/account/approve",approval,owner,status=400)
-        pilot = self.login("pilot")
+        pilot = self.login("pilot001")
         self.call("/account/profile",{"display":"Pilot One","password":self.password},pilot)
         _, state = self.call("/api/workspace",cookie=pilot)
-        self.assertEqual(state["labels"]["pilot"],"Pilot One")
-        self.assertEqual(state["actor"],"pilot")
-        self.call("/auth/request",dict(request,name="visitor"),status=202)
+        self.assertEqual(state["labels"]["pilot001"],"Pilot One")
+        self.assertEqual(state["actor"],"pilot001")
+        self.call("/auth/request",dict(request,name="visitor1"),status=202)
         _, settings = self.call("/account/settings",cookie=owner)
         approval["request_id"] = settings["requests"][0]["id"]
         self.call("/account/approve",approval,pilot,status=403)
         self.call("/account/reject",approval,owner)
-        self.call("/auth/login",dict(request,name="visitor"),status=401)
+        self.call("/auth/login",dict(request,name="visitor1"),status=401)
 
     def test_migration_and_limits(self):
         salt = secrets.token_bytes(16)
@@ -302,8 +318,8 @@ class WorkspaceSecurity(unittest.TestCase):
         backup = enrolled["codes"][0]
         recovered = self.login(code=backup)
         self.call("/auth/login",dict(auth,name="owner",code=backup),status=403)
-        self.approve_new("new",recovered)
-        limited = self.login("new")
+        self.approve_new("newuser1",recovered)
+        limited = self.login("newuser1")
         self.call("/api/workspace",cookie=limited,status=403)
         self.call("/downloads/1",cookie=limited,status=403)
         self.call("/security",cookie=limited)
@@ -318,26 +334,26 @@ class WorkspaceSecurity(unittest.TestCase):
 
     def test_admin_and_download_activity(self):
         owner = self.login()
-        auth = {"password":self.password,"target":"member"}
-        self.approve_new("member",owner)
-        member = self.login("member")
-        self.call("/auth/register",{"name":"new","password":self.password},member,404)
+        auth = {"password":self.password,"target":"member01"}
+        self.approve_new("member01",owner)
+        member = self.login("member01")
+        self.call("/auth/register",{"name":"newuser1","password":self.password},member,404)
         self.call("/account/grant",auth,member,403)
         self.call("/downloads/1",status=401)
         with app.database() as conn:
             conn.execute("INSERT INTO documents(name,body) VALUES('bill.pdf',?)",(b"private invoice",))
         self.call("/downloads/1",cookie=member)
         _, settings = self.call("/account/settings",cookie=owner)
-        self.assertTrue(any(e["event"]=="Document downloaded" and e["actor"]=="member" for e in settings["events"]))
+        self.assertTrue(any(e["event"]=="Document downloaded" and e["actor"]=="member01" for e in settings["events"]))
         self.assertNotIn("private invoice",json.dumps(settings))
         self.call("/account/disable",auth,owner)
         self.call("/downloads/1",cookie=member,status=401)
-        self.call("/auth/login",{"name":"member","password":self.password},status=401)
+        self.call("/auth/login",{"name":"member01","password":self.password},status=401)
         self.call("/account/enable",auth,owner)
-        member = self.login("member")
+        member = self.login("member01")
         self.call("/account/reset",dict(auth,replacement="new-test-password"),owner)
         self.call("/api/workspace",cookie=member,status=401)
-        self.login("member",password="new-test-password")
+        self.login("member01",password="new-test-password")
         self.call("/account/disable",dict(auth,target="owner"),owner,400)
 
 

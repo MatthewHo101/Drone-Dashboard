@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import hmac
+import json
 import ipaddress
 import os
 import secrets
@@ -219,6 +220,28 @@ def manage(conn, actor, token, op, data):
     target = data.get("target")
     if not isinstance(target,str) or not exists(conn,"users",target):
         raise ValueError("Choose an existing user.")
+    if op == "delete":
+        if target == actor:
+            raise ValueError("Choose another user. You cannot delete your own administrator account.")
+        conn.execute("UPDATE records SET owner=? WHERE owner=?",(actor,target))
+        conn.execute("UPDATE opportunities SET owner=? WHERE owner=?",(actor,target))
+        for row in conn.execute("SELECT id,owner,details FROM records WHERE kind='issues'").fetchall():
+            details=json.loads(row["details"])
+            liable=details.get("liable",[])
+            if target in liable or row["owner"] in liable:
+                details["liable"]=[n for n in liable if n not in (target,row["owner"])]
+                conn.execute("UPDATE records SET details=? WHERE id=?",(json.dumps(details),row["id"]))
+        conn.execute("UPDATE calendar_meetings SET actor=NULL WHERE actor=?",(target,))
+        conn.execute("DELETE FROM calendar_deadlines WHERE actor=?",(target,))
+        historical=target+" (deleted)"
+        for table,column in (("records","updated_by"),("task_updates","author"),("upload_info","actor")):
+            conn.execute(f"UPDATE {table} SET {column}=? WHERE {column}=?",(historical,target))
+        for table in ("sessions","pending","recovery","factors","profiles","admins","disabled","first_login","registrations"):
+            conn.execute(f"DELETE FROM {table} WHERE name=?",(target,))
+        conn.execute("DELETE FROM limits WHERE key=?",(throttle_keys(target,"")[0],))
+        conn.execute("DELETE FROM users WHERE name=?",(target,))
+        audit(conn,"Account permanently deleted",actor,target)
+        return {}
     if op == "reset":
         replacement = data.get("replacement","")
         if not isinstance(replacement,str) or not 12<=len(replacement)<=128:

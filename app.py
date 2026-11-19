@@ -309,8 +309,8 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(name, str) or not isinstance(password, str) or len(password) > 128:
             raise ValueError("Check the username and password.")
         if path == "/auth/request":
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,39}", name) or name != name.strip() or len(password) < 12:
-                raise ValueError("Use a 1–40 character username and a password of 12–128 characters.")
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 _.-]{7,39}", name) or name != name.strip() or len(password) < 12:
+                raise ValueError("Use an 8–40 character username and a password of 12–128 characters.")
             display = security.display_name(data.get("display",name))
             conn.execute("BEGIN IMMEDIATE")
             allowed = security.request_registration(conn,security.source(self),name,display,password)
